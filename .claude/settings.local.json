@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m http.server 8765)",
+      "Bash(echo \"PID=$!\")",
+      "Bash(curl -s -o /dev/null -w \"index:%{http_code} css:\" http://localhost:8765/index.html)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} bg:\" http://localhost:8765/assets/css/styles.css)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} viz:\" http://localhost:8765/assets/js/background.js)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -r kill)"
+    ]
+  }
+}
