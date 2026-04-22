@@ -595,6 +595,29 @@ tr:hover td { background: var(--green-dim); }
 ::selection { background: var(--green); color: var(--bg-deep); }
 a:focus-visible, button:focus-visible, input:focus-visible { outline: 1px solid var(--green); outline-offset: 2px; }
 
+/* ── Mobile performance: reduce rendering load ── */
+@media (max-width: 719px) {
+  /* Virtualize off-screen sections — biggest single win for large DOM */
+  .section { content-visibility: auto; contain-intrinsic-size: auto 700px; }
+  .topic   { content-visibility: auto; contain-intrinsic-size: auto 350px; }
+
+  /* Kill heavy always-on animations that cost compositor layers */
+  .hacker-scanline { display: none; }
+  .bg-scanlines    { display: none; }
+  .hacker-title    { animation: none !important; }
+  .ht-text         { animation: none !important; }
+
+  /* Disable glitch/scan keyframe loops */
+  * { animation-iteration-count: 1 !important; }
+  .blink, .author-title .cursor { animation-duration: 2s !important; }
+
+  /* No backdrop-filter on mobile — very expensive on GPU */
+  .sidebar { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(10, 13, 10, 0.97); }
+
+  /* Simpler box shadows */
+  .topic-header, .section-marker, .code-block, .callout { box-shadow: none !important; }
+}
+
 /* Respect user's reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

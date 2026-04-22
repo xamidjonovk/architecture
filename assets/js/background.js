@@ -1,14 +1,15 @@
 /* ══════════════════════════════════════════════════════════════════════
    BACKGROUND WIREFRAME GRID (Three.js)
-   Skipped on small screens and when reduced-motion is preferred.
+   Skipped on mobile, touch devices, and when reduced-motion is preferred.
    ══════════════════════════════════════════════════════════════════════ */
 (function initBackground() {
   const canvas = document.getElementById('bg-canvas');
   if (!canvas || typeof THREE === 'undefined') return;
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const isSmall = window.innerWidth < 720;
-  if (reduceMotion || isSmall) {
+  const isSmall = window.innerWidth < 1024;
+  const isTouch = 'ontouchstart' in window && window.innerWidth < 1400;
+  if (reduceMotion || isSmall || isTouch) {
     canvas.remove();
     return;
   }
@@ -20,27 +21,29 @@
   camera.position.set(0, 18, 30);
   camera.lookAt(0, 0, -40);
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'low-power' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
 
-  const SEG = 80;
+  const SEG = 60;
   const SIZE = 220;
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
 
   const posAttr = geo.attributes.position;
-  const origZ = new Float32Array(posAttr.count);
+  const origY = new Float32Array(posAttr.count);
   for (let i = 0; i < posAttr.count; i++) {
     const x = posAttr.getX(i), z = posAttr.getZ(i);
     const h = Math.sin(x * 0.12) * Math.cos(z * 0.12) * 1.8 + Math.sin(x * 0.05 + z * 0.03) * 2.2;
-    origZ[i] = h;
+    origY[i] = h;
     posAttr.setY(i, h);
   }
 
+  // Build wireframe once — never recreate it
+  const wireGeo = new THREE.WireframeGeometry(geo);
   const mat = new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.35 });
-  const wire = new THREE.LineSegments(new THREE.WireframeGeometry(geo), mat);
+  const wire = new THREE.LineSegments(wireGeo, mat);
   scene.add(wire);
 
   const glowGeo = new THREE.PlaneGeometry(600, 0.4);
@@ -49,7 +52,7 @@
   glow.position.set(0, 2, -140);
   scene.add(glow);
 
-  const particleCount = 80;
+  const particleCount = 60;
   const pGeo = new THREE.BufferGeometry();
   const pPos = new Float32Array(particleCount * 3);
   for (let i = 0; i < particleCount; i++) {
@@ -65,26 +68,31 @@
   let t = 0;
   let running = true;
 
-  // Pause the heavy loop when the tab is hidden
   document.addEventListener('visibilitychange', () => {
     running = !document.hidden;
     if (running) requestAnimationFrame(animate);
   });
+
+  // Throttle vertex updates — every 3rd frame to reduce GPU load
+  let frameCount = 0;
 
   function animate() {
     if (!running) return;
     t += 0.008;
     wire.position.z = (t * 3) % 10;
 
-    const now = Date.now() * 0.0005;
-    for (let i = 0; i < posAttr.count; i++) {
-      const x = posAttr.getX(i), z = posAttr.getZ(i);
-      const ripple = Math.sin(x * 0.08 + now) * Math.cos(z * 0.08 + now * 0.7) * 0.6;
-      posAttr.setY(i, origZ[i] + ripple);
+    frameCount++;
+    if (frameCount % 3 === 0) {
+      const now = Date.now() * 0.0005;
+      for (let i = 0; i < posAttr.count; i++) {
+        const x = posAttr.getX(i), z = posAttr.getZ(i);
+        const ripple = Math.sin(x * 0.08 + now) * Math.cos(z * 0.08 + now * 0.7) * 0.6;
+        posAttr.setY(i, origY[i] + ripple);
+      }
+      posAttr.needsUpdate = true;
+      // Update the existing wireframe geometry in-place — no allocation
+      wireGeo.attributes.position.needsUpdate = true;
     }
-    posAttr.needsUpdate = true;
-    wire.geometry.dispose();
-    wire.geometry = new THREE.WireframeGeometry(geo);
 
     const pp = particles.geometry.attributes.position.array;
     for (let i = 0; i < particleCount; i++) {

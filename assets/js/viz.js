@@ -1,12 +1,19 @@
 /* ══════════════════════════════════════════════════════════════════════
    INTERACTIVE 3D VISUALIZATIONS
    Each .viz-3d[data-viz="..."] element is initialized lazily when it
-   scrolls near the viewport. Skipped entirely when Three.js is unavailable
-   or the user has prefers-reduced-motion.
+   scrolls near the viewport. Skipped entirely when Three.js is unavailable,
+   on touch/mobile devices, or when reduced-motion is preferred.
    ══════════════════════════════════════════════════════════════════════ */
+
+const IS_MOBILE_DEVICE = (
+  ('ontouchstart' in window && window.innerWidth < 1200) ||
+  window.innerWidth < 720
+);
 
 function createViz(container, buildScene) {
   if (typeof THREE === 'undefined') return;
+  if (IS_MOBILE_DEVICE) return;
+
   const w = container.clientWidth;
   const h = 400;
 
@@ -18,7 +25,7 @@ function createViz(container, buildScene) {
   camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(w, h);
   renderer.setClearColor(0x000000, 0);
   container.appendChild(renderer.domElement);
@@ -39,7 +46,10 @@ function createViz(container, buildScene) {
 
   const group = new THREE.Group();
   scene.add(group);
-  buildScene(group, THREE);
+
+  // state.active is shared with buildScene so step() loops can self-pause
+  const state = { active: true };
+  buildScene(group, THREE, state);
 
   let rotX = 0.25, rotY = 0, autoRot = true;
   let dragging = false, lastX = 0, lastY = 0;
@@ -58,31 +68,14 @@ function createViz(container, buildScene) {
     lastX = e.clientX; lastY = e.clientY;
   });
 
-  canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 1) {
-      dragging = true; autoRot = false;
-      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-    }
-  }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => {
-    if (!dragging || e.touches.length !== 1) return;
-    rotY += (e.touches[0].clientX - lastX) * 0.008;
-    rotX += (e.touches[0].clientY - lastY) * 0.008;
-    rotX = Math.max(-1.2, Math.min(1.2, rotX));
-    lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-  }, { passive: true });
-  canvas.addEventListener('touchend', () => { dragging = false; });
-
-  // Pause the per-container render loop when it scrolls off screen
-  let onScreen = true;
   const visObserver = new IntersectionObserver(([entry]) => {
-    onScreen = entry.isIntersecting;
-    if (onScreen) requestAnimationFrame(animate);
+    state.active = entry.isIntersecting;
+    if (state.active) requestAnimationFrame(animate);
   }, { rootMargin: '100px' });
   visObserver.observe(container);
 
   function animate() {
-    if (!onScreen) return;
+    if (!state.active) return;
     if (autoRot) rotY += 0.003;
     group.rotation.x = rotX;
     group.rotation.y = rotY;
@@ -151,7 +144,7 @@ function makeConnection(THREE, from, to, color) {
 }
 
 const vizBuilders = {
-  auth(group, THREE) {
+  auth(group, THREE, state) {
     const client = makeNode(THREE, 2.2, 0x00eaff, 'CLIENT', '#00eaff');
     client.position.set(-9, 0, 0);
     group.add(client);
@@ -185,6 +178,7 @@ const vizBuilders = {
     const path = [[-9, 0, 0], [-3, 0, 0], [3, 0, 0], [9, 2, 0], [3, 0, 0], [-3, 0, 0], [-9, 0, 0]];
     let idx = 0, prog = 0;
     function step() {
+      if (!state.active) return;
       const from = path[idx], to = path[(idx + 1) % path.length];
       token.position.set(
         from[0] + (to[0] - from[0]) * prog,
@@ -198,7 +192,7 @@ const vizBuilders = {
     step();
   },
 
-  cache(group, THREE) {
+  cache(group, THREE, state) {
     const layers = [
       { y: 5, size: 2, color: 0x00eaff, label: 'L1 BROWSER' },
       { y: 3, size: 4, color: 0x00ff88, label: 'L2 CDN' },
@@ -235,6 +229,7 @@ const vizBuilders = {
 
     let y = 6;
     function step() {
+      if (!state.active) return;
       y -= 0.1;
       if (y < -4) y = 6;
       arrow.position.set(-8, y, 0);
@@ -243,7 +238,7 @@ const vizBuilders = {
     step();
   },
 
-  replication(group, THREE) {
+  replication(group, THREE, state) {
     const primary = makeNode(THREE, 2.8, 0xff00aa, 'PRIMARY', '#ff00aa');
     primary.position.set(0, 3, 0);
     group.add(primary);
@@ -267,6 +262,7 @@ const vizBuilders = {
     });
     const progs = packets.map(() => Math.random());
     function step() {
+      if (!state.active) return;
       packets.forEach((pk, i) => {
         progs[i] += 0.02;
         if (progs[i] > 1) progs[i] = 0;
@@ -282,7 +278,7 @@ const vizBuilders = {
     step();
   },
 
-  deploy(group, THREE) {
+  deploy(group, THREE, state) {
     const blueBox = new THREE.Group();
     for (let i = 0; i < 3; i++) {
       const n = makeNode(THREE, 1.4, 0x00eaff, `v1`, '#00eaff');
@@ -318,6 +314,7 @@ const vizBuilders = {
     }
 
     function step() {
+      if (!state.active) return;
       packets.forEach(p => {
         p.prog += 0.015;
         if (p.prog > 1) { p.prog = 0; p.target = Math.random() > 0.8 ? 'green' : 'blue'; }
@@ -334,7 +331,7 @@ const vizBuilders = {
     step();
   },
 
-  rag(group, THREE) {
+  rag(group, THREE, state) {
     const stages = [
       { x: -10, color: 0x00eaff, label: 'QUERY' },
       { x: -6, color: 0xffb800, label: 'EMBED' },
@@ -376,6 +373,7 @@ const vizBuilders = {
     group.add(packet);
     let prog = 0;
     function step() {
+      if (!state.active) return;
       prog += 0.008;
       if (prog > 1) prog = 0;
       packet.position.set(-10 + 20 * prog, Math.sin(prog * Math.PI * 2) * 0.5, 0);
@@ -385,7 +383,7 @@ const vizBuilders = {
     step();
   },
 
-  agent(group, THREE) {
+  agent(group, THREE, state) {
     const brainGeo = new THREE.IcosahedronGeometry(2.2, 1);
     const brainMat = new THREE.MeshStandardMaterial({
       color: 0xb87eff, transparent: true, opacity: 0.55,
@@ -423,6 +421,7 @@ const vizBuilders = {
     });
 
     function step() {
+      if (!state.active) return;
       brain.rotation.x += 0.005;
       brain.rotation.y += 0.007;
 
@@ -447,11 +446,11 @@ const vizBuilders = {
   const containers = document.querySelectorAll('.viz-3d[data-viz]');
   if (!containers.length) return;
 
-  if (reduceMotion || typeof THREE === 'undefined') {
+  if (reduceMotion || IS_MOBILE_DEVICE || typeof THREE === 'undefined') {
     containers.forEach(c => {
       const note = document.createElement('div');
       note.className = 'viz-label';
-      note.textContent = '3d viz disabled';
+      note.textContent = '3d viz — desktop only';
       c.appendChild(note);
     });
     return;
