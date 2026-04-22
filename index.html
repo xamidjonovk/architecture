@@ -5200,6 +5200,972 @@ def service(mock_dependencies):
       </div>
     </div>
   </article>
+
+  <!-- 8.4 GIL, threading, multiprocessing -->
+  <article class="topic" id="python-concurrency" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.4</span>
+      <h3>gil, threading, multiprocessing — qachon qaysi</h3>
+    </div>
+    <div class="question">Python'da haqiqiy parallelizm qanday? GIL nima uchun bor, qanday chetlab o'tiladi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">GIL — Global Interpreter Lock</div>
+      <p><strong>GIL = Python interpreter'ida bir vaqtning o'zida faqat bitta thread bytecode bajara oladigan qulf.</strong> Nega kerak? CPython'ning memory manager'i (reference counting) thread-safe emas. Har object'da <code>ob_refcnt</code> hisoblagichi bor — ikkita thread bir vaqtda o'zgartirsa, race condition → memory corruption. GIL shuni oldini oladi.</p>
+      <p><strong>Oqibat:</strong> 16 yadroli kompyuterda CPU-bound Python kodi faqat 1 yadroda ishlaydi. Biroq I/O vaqtida GIL bo'shatiladi — shuning uchun asyncio va threading I/O uchun foydali.</p>
+    </div>
+
+    <h4>3 ta parallelizm modeli</h4>
+
+    <table class="term-table">
+      <thead><tr><th></th><th>asyncio</th><th>threading</th><th>multiprocessing</th></tr></thead>
+      <tbody>
+        <tr><td>GIL ta'siri</td><td>Bitta thread, GIL muammo emas</td><td>GIL tufayli CPU-bound'ga yaroqsiz</td><td>Har process o'z GIL'i — to'liq parallel</td></tr>
+        <tr><td>Memory</td><td>Shared (bitta process)</td><td>Shared</td><td>Ajralgan (IPC kerak)</td></tr>
+        <tr><td>Overhead</td><td>Eng past (~1 KB/task)</td><td>O'rta (~8 MB/thread)</td><td>Eng yuqori (~50 MB/process)</td></tr>
+        <tr><td>Ideal ish</td><td>I/O-heavy (HTTP, DB)</td><td>Blocking lib (legacy C)</td><td>CPU-heavy (ML, rendering)</td></tr>
+        <tr><td>Scale</td><td>10,000+ concurrent</td><td>100-500 thread</td><td>CPU yadrolar soni</td></tr>
+      </tbody>
+    </table>
+
+    <div class="code-block">
+      <div class="code-header"><span>cpu_bound_benchmark.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
+def fibonacci(n):
+    if n &lt; 2: return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+NUMBERS = [35, 35, 35, 35]  # 4 ta CPU-bound ish
+
+# 1. Sequential — bazaviy
+t = time.time()
+[fibonacci(n) for n in NUMBERS]
+print(f"sequential: {time.time() - t:.2f}s")  # ~8s
+
+# 2. Threading — GIL tufayli FOYDASIZ (CPU-bound uchun)
+t = time.time()
+with ThreadPoolExecutor(4) as pool:
+    list(pool.map(fibonacci, NUMBERS))
+print(f"threads:    {time.time() - t:.2f}s")  # ~8s (!!)
+
+# 3. Multiprocessing — HAQIQIY parallel
+t = time.time()
+with ProcessPoolExecutor(4) as pool:
+    list(pool.map(fibonacci, NUMBERS))
+print(f"processes:  {time.time() - t:.2f}s")  # ~2s (4x tezroq)</code></pre>
+    </div>
+
+    <div class="callout warn">
+      <strong>⚠ Interview savol: "asyncio 10,000 concurrent request, threading 100 — nega?"</strong>
+      <p>Thread — OS-level resurs (~8 MB stack). 10,000 thread = 80 GB RAM + context switching overhead. Asyncio coroutine — userland obyekt (~1 KB), bitta thread'da event loop tomonidan boshqariladi. Context switch o'rniga <code>await</code> — imkoniyat paydo bo'lganda almashish.</p>
+    </div>
+
+    <h4>Python 3.13+ — no-GIL future</h4>
+    <p>Python 3.13 (2025 oktyabr) <code>--disable-gil</code> <strong>experimental</strong> flag bilan keldi. 3.14 (2026)'da optsiyali <code>PEP 703</code> implementation. 5-10 yil ichida GIL default'da o'chirilishi mumkin. Hozircha: <strong>production'da ishlatmang</strong> — ko'p C extension'lar thread-safe emas.</p>
+    <p><strong>Sub-interpreters (PEP 684)</strong> — 3.12'da kelgan. Har interpreter alohida GIL'ga ega. Multiprocessing'ga o'xshash, lekin process overhead'isiz. 2026'da stdlib <code>interpreters</code> modul bilan ishlash mumkin.</p>
+  </article>
+
+  <!-- 8.5 Memory model & GC -->
+  <article class="topic" id="python-memory" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.5</span>
+      <h3>memory model — reference counting, gc, slots</h3>
+    </div>
+    <div class="question">Python qanday xotira boshqaradi? Memory leak'lar qayerdan keladi?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Ikki bosqichli xotira boshqaruvi</h4>
+    <p>Python ikki mexanizmdan foydalanadi:</p>
+    <ol>
+      <li><strong>Reference counting (asosiy)</strong> — har object'da <code>ob_refcnt</code>. Reference 0'ga tushsa — darhol free qilinadi.</li>
+      <li><strong>Garbage collector (qo'shimcha)</strong> — cyclic reference'larni topadi. Generation-based (0, 1, 2) — yosh object'lar tez-tez tekshiriladi, eski kam.</li>
+    </ol>
+
+    <div class="code-block">
+      <div class="code-header"><span>refcount_gc_demo.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys, gc
+
+# 1. Reference counting — darhol o'chadi
+x = [1, 2, 3]
+print(sys.getrefcount(x))  # 2 (x + argument)
+y = x; print(sys.getrefcount(x))  # 3
+del y; print(sys.getrefcount(x))  # 2
+
+# 2. Circular reference — refcount yechmaydi, GC kerak
+class Node:
+    def __init__(self):
+        self.ref = None
+
+a, b = Node(), Node()
+a.ref = b
+b.ref = a          # cycle: a→b→a
+del a, b           # refcount=1 (o'zaro), xotira bo'shamaydi
+gc.collect()       # GC sikle'ni topadi va tozalaydi</code></pre>
+    </div>
+
+    <h4>__slots__ — xotirani 50-70% kamaytirish</h4>
+    <p>Default Python class'ida har instance <code>__dict__</code> bilan keladi — har attribute qo'shish uchun. Million instance'da — katta xotira.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>slots_benchmark.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys
+
+class Point:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+class PointSlots:
+    __slots__ = ('x', 'y')   # fixed attributes, no __dict__
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+p1 = Point(1, 2)
+p2 = PointSlots(1, 2)
+
+# __dict__ hajmi hisobga olinganda: Point ~296 bayt, PointSlots ~56 bayt
+# 1M instance: 296 MB vs 56 MB — 5x kamroq!
+print(sys.getsizeof(p1) + sys.getsizeof(p1.__dict__))  # ~296
+print(sys.getsizeof(p2))                                # ~56</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>__slots__ qachon ishlatiladi:</strong>
+      <ul>
+        <li>Data class'lar (Pydantic, dataclass) — millionlab instance yaratiladigan joylarda</li>
+        <li>Hot path — so'rov ishlovi, parsing</li>
+        <li><strong>Kamchilik</strong>: dynamic attribute qo'shib bo'lmaydi, subclass'larda ham <code>__slots__</code> kerak</li>
+      </ul>
+    </div>
+
+    <h4>Memory leak'larni topish — tracemalloc va py-spy</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>tracemalloc_leak.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import tracemalloc
+tracemalloc.start()
+
+# ... shubhali kod ishga tushadi ...
+run_suspect_code()
+
+snapshot = tracemalloc.take_snapshot()
+top_stats = snapshot.statistics('lineno')
+for stat in top_stats[:10]:
+    print(stat)
+# Chiqish: fayl:qator → qancha bayt, qancha blok</code></pre>
+    </div>
+
+    <p><strong>Production'da</strong>: <code>py-spy dump --pid 1234</code> (SIGKILL yubormasdan thread stack) yoki <code>memray</code> (flame graph bilan).</p>
+  </article>
+
+  <!-- 8.6 Data model — descriptors, metaclasses -->
+  <article class="topic" id="python-datamodel" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.6</span>
+      <h3>data model — descriptors, metaclasses, dunder methods</h3>
+    </div>
+    <div class="question">Python'ning "sehri" qanday? Descriptor, metaclass, __init_subclass__ — qachon kerak?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Descriptors — attribute access protokoli</h4>
+    <p>Descriptor = <code>__get__</code>, <code>__set__</code>, <code>__delete__</code> metodlari bo'lgan class. Django ORM field'lari, SQLAlchemy Column, <code>property</code>, <code>classmethod</code>, <code>staticmethod</code> — hammasi descriptor.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>typed_descriptor.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">class Typed:
+    """Runtime type validation via descriptor"""
+    def __init__(self, expected_type):
+        self.expected_type = expected_type
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, instance, owner):
+        if instance is None: return self
+        return instance.__dict__[self.name]
+
+    def __set__(self, instance, value):
+        if not isinstance(value, self.expected_type):
+            raise TypeError(f"{self.name} must be {self.expected_type.__name__}")
+        instance.__dict__[self.name] = value
+
+class User:
+    name = Typed(str)
+    age  = Typed(int)
+
+u = User()
+u.name = "Komil"    # ok
+u.age = "25"        # TypeError: age must be int</code></pre>
+    </div>
+
+    <h4>Metaclasses — class'ning class'i</h4>
+    <p>Har class <code>type</code> metaclass'ining instance'i. Custom metaclass yozsangiz — class yaratilish vaqtida interfere qila olasiz. Django Model, SQLAlchemy declarative, ABC — hammasi metaclass ishlatadi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>metaclass_registry.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">class PluginRegistry(type):
+    """Har subclass avtomatik registry'ga qo'shiladi"""
+    plugins = {}
+    def __new__(mcs, name, bases, namespace):
+        cls = super().__new__(mcs, name, bases, namespace)
+        if bases:  # base class'ni qoldir
+            mcs.plugins[name] = cls
+        return cls
+
+class Plugin(metaclass=PluginRegistry): pass
+class PDFExporter(Plugin): pass
+class CSVExporter(Plugin): pass
+
+print(PluginRegistry.plugins)
+# {'PDFExporter': &lt;class 'PDFExporter'&gt;, 'CSVExporter': &lt;class 'CSVExporter'&gt;}</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Metaclass yoki __init_subclass__?</strong>
+      <p>Zamonaviy Python'da ko'p holda <strong>metaclass kerak emas</strong> — <code>__init_subclass__</code> yetadi. Metaclass faqat: (a) metaclass'dan metaclass meros, (b) class yaratilish kuchli o'zgartirish kerak bo'lsa. "Siz metaclass kerakmi deb shubha qilasiz — demak, kerak emas." — Tim Peters.</p>
+    </div>
+
+    <h4>Dunder metodlar — object'ni tilga integratsiya</h4>
+    <table class="term-table">
+      <thead><tr><th>Dunder</th><th>Protokol</th><th>Misol</th></tr></thead>
+      <tbody>
+        <tr><td>__eq__, __hash__</td><td>Tenglik + hashable (set/dict key)</td><td>dataclass(frozen=True)</td></tr>
+        <tr><td>__lt__, __le__, ...</td><td>Ordering — sorted() uchun</td><td>@functools.total_ordering</td></tr>
+        <tr><td>__iter__, __next__</td><td>Iterator protokoli</td><td>custom range</td></tr>
+        <tr><td>__enter__, __exit__</td><td>Context manager</td><td>with open(...)</td></tr>
+        <tr><td>__call__</td><td>Instance'ni funksiyadek chaqirish</td><td>LRUCache, Pipeline</td></tr>
+        <tr><td>__getattr__</td><td>Mavjud bo'lmagan attribute</td><td>dynamic proxy</td></tr>
+        <tr><td>__getitem__</td><td>obj[key] protokoli</td><td>custom collection</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 8.7 Generators & context managers -->
+  <article class="topic" id="python-generators" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.7</span>
+      <h3>generators, iterators, context managers</h3>
+    </div>
+    <div class="question">Generator qanday ishlaydi? Lazy evaluation, memory efficiency va async generator'lar.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Generator — lazy iterator</h4>
+    <p>Generator — <code>yield</code> ishlatadigan funksiya. Birdan hamma narsani xotiraga yuklamaydi — element kerak bo'lganda beradi. 10 GB faylni parse qilish, cheksiz oqim (WebSocket, Kafka) — generator'siz imkonsiz.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>generator_memory.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys
+
+# List — xotirada
+list_ = [i * i for i in range(10_000_000)]
+print(sys.getsizeof(list_))  # ~89 MB
+
+# Generator — xotirada emas, "retsept"
+gen = (i * i for i in range(10_000_000))
+print(sys.getsizeof(gen))    # ~200 bayt
+
+# Iteration — bir vaqtda bitta element
+for sq in gen:  # xotira bosimsiz
+    process(sq)
+
+# Real use: faylni satr-satr o'qish (katta log)
+def read_large_file(path):
+    with open(path) as f:
+        for line in f:         # iterator — xotirada emas
+            yield line.strip()
+
+# Pipeline — lazy chain
+words = (line for line in read_large_file('access.log') if '500' in line)
+errors = (line for line in words if 'timeout' in line)
+# Hech narsa bajarilmadi — faqat hisoblagan vaqtda
+for e in errors: print(e)</code></pre>
+    </div>
+
+    <h4>Context manager — resurs boshqaruvi</h4>
+    <p>File, DB connection, lock — hamma narsa <code>with</code> bilan ochilib, avtomatik yopilishi kerak. Xatolik yuz bersa ham — <code>__exit__</code> chaqiriladi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>contextmanager_examples.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from contextlib import contextmanager, asynccontextmanager
+import time
+
+# Custom context manager — 1-liner decorator bilan
+@contextmanager
+def timer(label):
+    t = time.perf_counter()
+    yield
+    print(f"{label}: {time.perf_counter() - t:.3f}s")
+
+with timer("expensive_op"):
+    do_work()
+
+# Async context manager
+@asynccontextmanager
+async def db_transaction(session):
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+async with db_transaction(s) as tx:
+    await tx.execute(...)</code></pre>
+    </div>
+  </article>
+
+  <!-- 8.8 SQLAlchemy 2.0 async -->
+  <article class="topic" id="sqlalchemy-async" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.8</span>
+      <h3>sqlalchemy 2.0 async — sessions, n+1, unit of work</h3>
+    </div>
+    <div class="question">FastAPI bilan async SQLAlchemy qanday to'g'ri qo'llaniladi? N+1 va connection leak'larni qanday oldini olish?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">SQLAlchemy 2.0 — yangi standard</div>
+      <p>2023-da relaz qilingan SQLAlchemy 2.0 — async-native, type-safe, Core va ORM API unification. Eski 1.x ("legacy") bilan kod to'liq farq qiladi — yangi loyihada 2.0 style'ni ishlating.</p>
+    </div>
+
+    <h4>Async engine + session setup</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>db.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase): pass
+
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@db:5432/app",
+    pool_size=20,          # Little's Law: L = λW (11.4'ga qarang)
+    max_overflow=10,       # burst uchun qo'shimcha
+    pool_pre_ping=True,    # o'lik connection'ni tekshirish
+    pool_recycle=3600,     # 1 soatdan keyin yangilash
+)
+
+AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
+
+# FastAPI dependency
+async def get_db():
+    async with AsyncSession() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        # commit — service layer'da</code></pre>
+    </div>
+
+    <h4>N+1 muammosi — eng ko'p uchraydigan bug</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>n_plus_one.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from sqlalchemy import select
+from sqlalchemy.orm import selectinload, joinedload
+
+# YOMON — 1 + N ta query
+async def bad(db):
+    users = (await db.execute(select(User))).scalars().all()  # 1 query
+    for u in users:
+        print(u.orders)  # har user uchun yangi query (LAZY load) — N query
+
+# YAXSHI — 1 + 1 query (IN clause)
+async def good_selectin(db):
+    result = await db.execute(
+        select(User).options(selectinload(User.orders))
+    )
+    users = result.scalars().all()
+    # hamma orders oldindan yuklangan — 2 query total
+
+# Alternativ — JOIN (bitta query, lekin product)
+async def good_joined(db):
+    result = await db.execute(
+        select(User).options(joinedload(User.orders))
+    )</code></pre>
+    </div>
+
+    <table class="term-table">
+      <thead><tr><th>Strategiya</th><th>Query soni</th><th>Qachon ishlatiladi</th></tr></thead>
+      <tbody>
+        <tr><td><code>selectinload</code></td><td>1 + 1 (IN clause)</td><td>One-to-many, ko'p bola</td></tr>
+        <tr><td><code>joinedload</code></td><td>1 (LEFT OUTER JOIN)</td><td>One-to-one, one-to-few</td></tr>
+        <tr><td><code>subqueryload</code></td><td>1 + 1 (subquery)</td><td>Eski, selectinload afzal</td></tr>
+        <tr><td>Raw (lazy)</td><td>1 + N (yomon)</td><td>Hech qachon production'da</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Unit of Work pattern</h4>
+    <p>Service layer'da <strong>bitta transaction'da bir nechta o'zgarish</strong>. Hammasi muvaffaqiyatli bo'lsa — commit. Biri fail qilsa — rollback.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>unit_of_work.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">class OrderService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def place_order(self, user_id: UUID, items: list):
+        async with self.db.begin():  # transaction boshlanadi
+            order = Order(user_id=user_id)
+            self.db.add(order)
+            await self.db.flush()     # order.id olish uchun
+
+            for item in items:
+                self.db.add(OrderItem(order_id=order.id, ...))
+                # stock kamaytirish
+                stmt = update(Product).where(Product.id == item.pid).values(
+                    stock=Product.stock - item.qty
+                )
+                await self.db.execute(stmt)
+
+            # transaction avtomatik commit (context exit)
+            return order</code></pre>
+    </div>
+  </article>
+
+  <!-- 8.9 FastAPI middleware, lifespan, background -->
+  <article class="topic" id="fastapi-middleware" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.9</span>
+      <h3>middleware, lifespan, background tasks</h3>
+    </div>
+    <div class="question">FastAPI request hayot siklini qanday tushunamiz? Lifespan, middleware, background task orasidagi farq.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Request lifecycle</h4>
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-req" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
+      </defs>
+      <rect class="node-rect-alt" x="20" y="60" width="90" height="50"/>
+      <text x="65" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Request</text>
+
+      <rect class="node-rect" x="130" y="60" width="100" height="50"/>
+      <text x="180" y="80" fill="#00ff88" font-size="11" text-anchor="middle" font-weight="700">Middleware</text>
+      <text x="180" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">CORS, auth, log</text>
+
+      <rect class="node-rect" x="250" y="60" width="110" height="50"/>
+      <text x="305" y="80" fill="#00eaff" font-size="11" text-anchor="middle" font-weight="700">Dependencies</text>
+      <text x="305" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">DB, current_user</text>
+
+      <rect class="node-rect" x="380" y="60" width="100" height="50"/>
+      <text x="430" y="80" fill="#b87eff" font-size="11" text-anchor="middle" font-weight="700">Endpoint</text>
+      <text x="430" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">async def</text>
+
+      <rect class="node-rect" x="500" y="60" width="110" height="50"/>
+      <text x="555" y="80" fill="#ff00aa" font-size="11" text-anchor="middle" font-weight="700">Response</text>
+      <text x="555" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">+ background</text>
+
+      <rect class="node-rect-alt" x="630" y="60" width="70" height="50"/>
+      <text x="665" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Client</text>
+
+      <line class="edge-line" x1="110" y1="85" x2="130" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="230" y1="85" x2="250" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="360" y1="85" x2="380" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="480" y1="85" x2="500" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="610" y1="85" x2="630" y2="85" marker-end="url(#arrow-req)"/>
+
+      <text x="360" y="155" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">Lifespan (app startup/shutdown) — bu hammasining tashqarisida, bir marta ishlaydi</text>
+      <text x="360" y="175" fill="#ff00aa" font-size="10" text-anchor="middle">Background tasks — response qaytganidan keyin ishlaydi (short-lived) · Celery/ARQ — real async queue</text>
+    </svg>
+    </div>
+
+    <h4>Lifespan — startup va shutdown</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>lifespan.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    app.state.redis = await Redis.from_url("redis://cache:6379")
+    app.state.http = AsyncClient(timeout=10)
+    print("app started")
+    yield
+    # shutdown — SIGTERM keldi, graceful cleanup
+    await app.state.http.aclose()
+    await app.state.redis.close()
+    print("app stopped")
+
+app = FastAPI(lifespan=lifespan)</code></pre>
+    </div>
+
+    <h4>Middleware — request/response manipulyatsiya</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>request_id_middleware.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import uuid, time
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        req_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
+        request.state.request_id = req_id
+        t = time.perf_counter()
+        response = await call_next(request)
+        response.headers['X-Request-ID'] = req_id
+        response.headers['X-Response-Time'] = f"{(time.perf_counter()-t)*1000:.1f}ms"
+        return response
+
+app.add_middleware(RequestIDMiddleware)</code></pre>
+    </div>
+
+    <h4>BackgroundTasks vs Celery/ARQ</h4>
+    <div class="callout warn">
+      <strong>⚠ BackgroundTasks — faqat "oddiy, qisqa" ishlar uchun:</strong>
+      <ul>
+        <li>Fire-and-forget email, audit log, metrik yuborish (&lt;5 sekund)</li>
+        <li><strong>Durable emas</strong>: server crash = ish yo'qoladi</li>
+        <li>Retry yo'q, scheduling yo'q, monitoring yo'q</li>
+      </ul>
+      <p>Kritik ishlar (payment, large file processing) uchun — <strong>Celery</strong>, <strong>ARQ</strong> (asyncio-native, Redis), <strong>Dramatiq</strong>, yoki AWS SQS/EventBridge.</p>
+    </div>
+  </article>
+
+  <!-- 8.10 Auth patterns -->
+  <article class="topic" id="fastapi-auth" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.10</span>
+      <h3>authentication patterns — oauth2, jwt, refresh tokens, scopes</h3>
+    </div>
+    <div class="question">Production auth tizim qanday qurilgan? JWT access + refresh, OAuth2 scopes va RBAC.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>JWT access + refresh token flow</h4>
+    <p>Access token qisqa umrli (15 daqiqa) — ko'p ishlatiladi, o'g'irlansa — ta'sir kam. Refresh token uzun (7-30 kun), faqat yangi access olish uchun, HTTP-only cookie'da.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>auth.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from datetime import datetime, timedelta, timezone
+from jose import jwt, JWTError
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+
+SECRET = settings.JWT_SECRET
+ALGO = "HS256"
+ACCESS_TTL = timedelta(minutes=15)
+REFRESH_TTL = timedelta(days=7)
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/auth/login",
+    scopes={
+        "orders:read": "View orders",
+        "orders:write": "Create/modify orders",
+        "admin": "Admin operations",
+    },
+)
+
+def create_tokens(user_id: str, scopes: list[str]) -> dict:
+    now = datetime.now(timezone.utc)
+    access = jwt.encode(
+        {"sub": user_id, "scopes": scopes, "type": "access",
+         "exp": now + ACCESS_TTL, "iat": now, "jti": str(uuid.uuid4())},
+        SECRET, ALGO)
+    refresh = jwt.encode(
+        {"sub": user_id, "type": "refresh",
+         "exp": now + REFRESH_TTL, "iat": now, "jti": str(uuid.uuid4())},
+        SECRET, ALGO)
+    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+
+async def get_current_user(
+    security_scopes: SecurityScopes,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    try:
+        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+        if payload.get("type") != "access":
+            raise JWTError("wrong token type")
+        user_id = payload["sub"]
+        token_scopes = payload.get("scopes", [])
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
+
+    # Required scope check
+    for scope in security_scopes.scopes:
+        if scope not in token_scopes:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"missing scope: {scope}"
+            )
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "inactive user")
+    return user
+
+# Endpoint — scope talab qiluvchi
+@app.post("/orders")
+async def create_order(
+    user: User = Security(get_current_user, scopes=["orders:write"])
+):
+    return await service.create(user)</code></pre>
+    </div>
+
+    <h4>Auth strategiyalarini taqqoslash</h4>
+    <table class="term-table">
+      <thead><tr><th>Strategiya</th><th>Use case</th><th>Kamchilik</th></tr></thead>
+      <tbody>
+        <tr><td>Session (cookie)</td><td>Server-rendered app, SSO</td><td>CSRF, sticky session yoki shared store</td></tr>
+        <tr><td>JWT access-only</td><td>Stateless API, mobile</td><td>Revocation qiyin (blacklist kerak)</td></tr>
+        <tr><td>JWT access + refresh</td><td>SPA, mobile — industry standard</td><td>Refresh token saqlash ehtiyotkorlik</td></tr>
+        <tr><td>OAuth2 authorization code + PKCE</td><td>3rd-party SSO (Google, GitHub)</td><td>OAuth provider'ga bog'liq</td></tr>
+        <tr><td>API key</td><td>B2B, internal service</td><td>Leak = full access, rotation qiyin</td></tr>
+        <tr><td>mTLS</td><td>Service-to-service (zero-trust)</td><td>Cert management overhead</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn">
+      <strong>⚠ Security musts:</strong>
+      <ul>
+        <li><strong>Password hashing</strong>: <code>bcrypt</code> yoki <code>argon2</code> (OWASP tavsiyasi). Plain SHA256 — hech qachon.</li>
+        <li><strong>Token storage (SPA)</strong>: refresh token — httpOnly + Secure + SameSite=Strict cookie. localStorage XSS'ga ochiq.</li>
+        <li><strong>Rate limiting</strong>: login endpoint'ga — IP + account based. Bot attack'dan himoya.</li>
+        <li><strong>Refresh rotation</strong>: refresh ishlatilganda — eski bekor, yangisi berilsin. Reuse detection = "token o'g'irlandi" signal.</li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- 8.11 Testing strategies -->
+  <article class="topic" id="fastapi-testing" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.11</span>
+      <h3>testing strategies — pytest, fixtures, testcontainers</h3>
+    </div>
+    <div class="question">Production-grade testing piramidasi: unit, integration, e2e. Real DB bilan qanday test yozamiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Testing piramidasi</h4>
+    <ul>
+      <li><strong>Unit (70%)</strong> — fake dependency, millisekund, izolyatsiyalangan. Service layer biznes logikasi.</li>
+      <li><strong>Integration (25%)</strong> — real DB, real Redis (testcontainers). Repository, transaction boundary.</li>
+      <li><strong>E2E (5%)</strong> — full HTTP stack, minimal. "Login → place order → payment success" kabi critical path.</li>
+    </ul>
+
+    <h4>Testcontainers — har test sessionga real DB</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>conftest.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import pytest_asyncio
+from testcontainers.postgres import PostgresContainer
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from httpx import AsyncClient, ASGITransport
+
+@pytest_asyncio.fixture(scope="session")
+async def pg_container():
+    with PostgresContainer("postgres:16") as pg:
+        yield pg
+
+@pytest_asyncio.fixture(scope="session")
+async def engine(pg_container):
+    url = pg_container.get_connection_url().replace("psycopg2", "asyncpg")
+    engine = create_async_engine(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+@pytest_asyncio.fixture
+async def db(engine):
+    """Har test o'z transaction'ida — oxirida rollback"""
+    async with engine.connect() as conn:
+        tx = await conn.begin()
+        Session = async_sessionmaker(bind=conn, expire_on_commit=False)
+        async with Session() as session:
+            yield session
+        await tx.rollback()  # testdan keyin DB toza
+
+@pytest_asyncio.fixture
+async def client(db):
+    app.dependency_overrides[get_db] = lambda: db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>test_orders.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import pytest
+
+@pytest.mark.asyncio
+async def test_create_order_success(client, db):
+    # Arrange — fixture orqali user yaratamiz
+    user = await create_user(db, email="k@test.com")
+    token = create_access_token(user.id)
+
+    # Act
+    resp = await client.post(
+        "/orders",
+        json={"items": [{"product_id": "p1", "qty": 2}]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    # Assert
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["user_id"] == str(user.id)
+    assert len(data["items"]) == 1
+
+    # DB state tekshirish
+    order = await db.get(Order, data["id"])
+    assert order.total == Decimal("200.00")</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Testing best practices:</strong>
+      <ul>
+        <li><code>pytest-asyncio</code> — async test'lar</li>
+        <li><code>hypothesis</code> — property-based testing (edge case'larni topadi)</li>
+        <li><code>factory_boy</code> — test data yaratish</li>
+        <li><code>freezegun</code> — vaqtni "to'xtatish" (deterministik test)</li>
+        <li><code>respx</code> — httpx mocking (external HTTP)</li>
+        <li><strong>Coverage &gt; 80%</strong> — quantity emas, critical path qamrovi muhim</li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- 8.12 Performance tuning -->
+  <article class="topic" id="fastapi-performance" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.12</span>
+      <h3>performance — uvicorn, gunicorn, orjson, streaming</h3>
+    </div>
+    <div class="question">FastAPI'ni qanday optimallashtiramiz? Worker soni, JSON serialization, response streaming.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Uvicorn vs Gunicorn + Uvicorn workers</h4>
+    <p>Uvicorn — ASGI server (bitta process). Gunicorn — process manager. Production'da <strong>Gunicorn + UvicornWorker</strong> kombinatsiyasi standard: graceful reload, worker restart, signal handling.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>gunicorn.conf.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import multiprocessing
+
+# Workers = (2 × CPU) + 1 — klassik rule, lekin async workers uchun (1-2) × CPU ham yetadi
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = "uvicorn.workers.UvicornWorker"
+worker_connections = 1000       # har worker 1000 concurrent connection
+
+bind = "0.0.0.0:8000"
+keepalive = 5                   # HTTP keep-alive
+graceful_timeout = 30           # SIGTERM -> SIGKILL gacha
+timeout = 120                   # slow request watchdog
+
+# Access log — critical
+accesslog = "-"
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
+
+# Preload app — fork() oldin load qilinadi = xotira tejaydi (copy-on-write)
+preload_app = True</code></pre>
+    </div>
+
+    <h4>ORJSON — 2-3x tezroq JSON</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>orjson_response.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from fastapi import FastAPI
+from fastapi.responses import ORJSONResponse
+
+# Global default
+app = FastAPI(default_response_class=ORJSONResponse)
+
+# Yoki per-endpoint
+@app.get("/large", response_class=ORJSONResponse)
+async def large_response():
+    return {"data": [...]}   # 50 MB JSON — 2-3x tezroq serialize</code></pre>
+    </div>
+
+    <h4>Response streaming — katta response xotirasiz</h4>
+    <p>500 MB CSV export — <code>return data</code> — OOM. Streaming bilan — chunk-chunk yuboriladi, xotira bosimi doimiy.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>streaming_response.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from fastapi.responses import StreamingResponse
+
+@app.get("/export.csv")
+async def export(db: AsyncSession = Depends(get_db)):
+    async def row_generator():
+        yield "id,name,amount\n"
+        result = await db.stream(select(Order))    # server-side cursor
+        async for row in result:
+            yield f"{row.id},{row.name},{row.amount}\n"
+    return StreamingResponse(row_generator(), media_type="text/csv")
+
+# LLM streaming (SSE)
+@app.post("/chat")
+async def chat(body: ChatRequest):
+    async def event_stream():
+        async for chunk in llm.stream(body.message):
+            yield f"data: {chunk}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")</code></pre>
+    </div>
+
+    <h4>Performance checklist</h4>
+    <ol>
+      <li><strong>Profile birinchi</strong> — <code>py-spy record</code>, flame graph. Taxmin bilan optimize qilmang.</li>
+      <li><strong>N+1 query</strong> yo'qmi — <code>SQLALCHEMY_ECHO=true</code> yoki query count middleware.</li>
+      <li><strong>Sync I/O yashiringanini tekshiring</strong> — <code>requests</code>, <code>psycopg2</code>, <code>time.sleep</code> — async endpoint'da — event loop bloklaydi.</li>
+      <li><strong>Connection pool</strong> — Little's Law bilan sizing (§13).</li>
+      <li><strong>Response compression</strong> — <code>GZipMiddleware</code> (minimum_size=1000).</li>
+      <li><strong>Cache</strong> — <code>@lru_cache</code> pure functions, Redis for DB results.</li>
+      <li><strong>CPU-bound</strong> — <code>run_in_executor</code> yoki ProcessPool.</li>
+    </ol>
+  </article>
+
+  <!-- 8.13 Production deployment -->
+  <article class="topic" id="fastapi-production" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.13</span>
+      <h3>production deployment — graceful shutdown, health checks, observability</h3>
+    </div>
+    <div class="question">Kubernetes'da FastAPI qanday to'g'ri ishlaydi? SIGTERM, readiness, zero-downtime.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Signal handling va graceful shutdown</h4>
+    <p>K8s pod'ni o'chirganida SIGTERM yuboradi (default 30s kutadi, keyin SIGKILL). Bu vaqt ichida:</p>
+    <ol>
+      <li>Readiness probe'ni fail qilish (trafik keltirmaslik)</li>
+      <li>Hozirgi in-flight request'larni yakunlash</li>
+      <li>DB connection, Redis, HTTP client'larni yopish</li>
+      <li>Background task'larni yakunlash yoki yana queue'ga qaytarish</li>
+    </ol>
+
+    <div class="code-block">
+      <div class="code-header"><span>graceful_shutdown.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from contextlib import asynccontextmanager
+import asyncio, signal
+
+ready = True   # readiness state
+
+@asynccontextmanager
+async def lifespan(app):
+    # startup
+    app.state.db = await create_async_engine(...)
+
+    # SIGTERM handler
+    loop = asyncio.get_event_loop()
+    stop_event = asyncio.Event()
+    loop.add_signal_handler(signal.SIGTERM, stop_event.set)
+
+    yield
+
+    # shutdown — SIGTERM keldi
+    global ready
+    ready = False
+    # K8s readiness probe'ni yoshirishga 5-10s bering
+    await asyncio.sleep(5)
+    # in-flight request'lar yakunlashi uchun grace period
+    await app.state.db.dispose()
+
+@app.get("/health/live")
+async def liveness():
+    return {"status": "alive"}   # doim 200 (process ishlayaptimi)
+
+@app.get("/health/ready")
+async def readiness():
+    if not ready:
+        raise HTTPException(503, "shutting down")
+    # DB ping ham tekshirish mumkin
+    return {"status": "ready"}</code></pre>
+    </div>
+
+    <h4>Kubernetes manifest — to'g'ri sozlash</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>deployment.yaml</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # zero-downtime
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60      # SIGTERM→SIGKILL oralig'i
+      containers:
+      - name: app
+        image: myapp:v1.2.3
+        ports: [{containerPort: 8000}]
+
+        # Liveness — process "osilganmi?" tekshiradi
+        livenessProbe:
+          httpGet: { path: /health/live, port: 8000 }
+          periodSeconds: 10
+          failureThreshold: 3
+
+        # Readiness — "trafik qabul qilishga tayyormi?"
+        readinessProbe:
+          httpGet: { path: /health/ready, port: 8000 }
+          periodSeconds: 5
+          failureThreshold: 2
+
+        # preStop — shutdown boshlanishidan oldin
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "10"]   # LB'dan chiqib ulgursin
+
+        resources:
+          requests: { cpu: 250m, memory: 512Mi }
+          limits:   { cpu: 1000m, memory: 1Gi }</code></pre>
+    </div>
+
+    <h4>OpenTelemetry — metrics, logs, traces uch bittada</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>otel_setup.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from opentelemetry import trace, metrics
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
+    endpoint="otel-collector:4317", insecure=True
+)))
+trace.set_tracer_provider(provider)
+
+# Auto-instrument FastAPI, SQLAlchemy, httpx
+FastAPIInstrumentor.instrument_app(app)
+SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+
+# Custom span — biznes logika
+tracer = trace.get_tracer(__name__)
+@app.post("/orders")
+async def create_order(...):
+    with tracer.start_as_current_span("create_order") as span:
+        span.set_attribute("user.id", user.id)
+        span.set_attribute("order.items.count", len(items))
+        return await service.create(...)</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Production checklist — FastAPI'ni deploy qilishdan oldin:</strong>
+      <ol>
+        <li>Graceful shutdown — SIGTERM handle qilinadi, <code>preStop</code> sleep</li>
+        <li>Liveness + readiness alohida endpoint</li>
+        <li>Connection pool sizing (Little's Law)</li>
+        <li>Resource limits (CPU + memory)</li>
+        <li>Structured logging (JSON, trace_id, request_id)</li>
+        <li>OpenTelemetry instrumentation (auto + custom)</li>
+        <li>Health check: DB ping, Redis ping, external API status</li>
+        <li>Rate limiting (per IP, per user)</li>
+        <li>Error handler (PII leak qilmaslik)</li>
+        <li>Secrets Manager (hard-coded emas)</li>
+        <li>Docker image: multi-stage, non-root user, minimal base (distroless/alpine)</li>
+        <li>HTTPS enforcement, HSTS header, security headers</li>
+      </ol>
+    </div>
+  </article>
+
 </section>
 <!-- ══════════════════════════════════════════════════════ -->
 <!-- PART IV: INFRASTRUCTURE, CLOUD & RELIABILITY           -->
