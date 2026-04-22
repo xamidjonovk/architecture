@@ -4013,7 +4013,7 @@ eventSource.onerror = () => {
   <div class="section-marker">
     <div class="section-marker-row">
       <span class="section-num">08</span>
-      <h2 class="section-title">python & fastapi mastery</h2>
+      <h2 class="section-title">python core internals — async, gil, memory</h2>
     </div>
   </div>
 
@@ -4174,9 +4174,252 @@ async def good_4():
     </div>
   </article>
 
-  <article class="topic" id="pydantic-typing" data-search>
+  <article class="topic" id="python-concurrency" data-search>
     <div class="topic-header">
       <span class="topic-id">8.2</span>
+      <h3>gil, threading, multiprocessing — qachon qaysi</h3>
+    </div>
+    <div class="question">Python'da haqiqiy parallelizm qanday? GIL nima uchun bor, qanday chetlab o'tiladi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">GIL — Global Interpreter Lock</div>
+      <p><strong>GIL = Python interpreter'ida bir vaqtning o'zida faqat bitta thread bytecode bajara oladigan qulf.</strong> Nega kerak? CPython'ning memory manager'i (reference counting) thread-safe emas. Har object'da <code>ob_refcnt</code> hisoblagichi bor — ikkita thread bir vaqtda o'zgartirsa, race condition → memory corruption. GIL shuni oldini oladi.</p>
+      <p><strong>Oqibat:</strong> 16 yadroli kompyuterda CPU-bound Python kodi faqat 1 yadroda ishlaydi. Biroq I/O vaqtida GIL bo'shatiladi — shuning uchun asyncio va threading I/O uchun foydali.</p>
+    </div>
+
+    <h4>3 ta parallelizm modeli</h4>
+
+    <table class="term-table">
+      <thead><tr><th></th><th>asyncio</th><th>threading</th><th>multiprocessing</th></tr></thead>
+      <tbody>
+        <tr><td>GIL ta'siri</td><td>Bitta thread, GIL muammo emas</td><td>GIL tufayli CPU-bound'ga yaroqsiz</td><td>Har process o'z GIL'i — to'liq parallel</td></tr>
+        <tr><td>Memory</td><td>Shared (bitta process)</td><td>Shared</td><td>Ajralgan (IPC kerak)</td></tr>
+        <tr><td>Overhead</td><td>Eng past (~1 KB/task)</td><td>O'rta (~8 MB/thread)</td><td>Eng yuqori (~50 MB/process)</td></tr>
+        <tr><td>Ideal ish</td><td>I/O-heavy (HTTP, DB)</td><td>Blocking lib (legacy C)</td><td>CPU-heavy (ML, rendering)</td></tr>
+        <tr><td>Scale</td><td>10,000+ concurrent</td><td>100-500 thread</td><td>CPU yadrolar soni</td></tr>
+      </tbody>
+    </table>
+
+    <div class="code-block">
+      <div class="code-header"><span>cpu_bound_benchmark.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
+def fibonacci(n):
+    if n &lt; 2: return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+NUMBERS = [35, 35, 35, 35]  # 4 ta CPU-bound ish
+
+# 1. Sequential — bazaviy
+t = time.time()
+[fibonacci(n) for n in NUMBERS]
+print(f"sequential: {time.time() - t:.2f}s")  # ~8s
+
+# 2. Threading — GIL tufayli FOYDASIZ (CPU-bound uchun)
+t = time.time()
+with ThreadPoolExecutor(4) as pool:
+    list(pool.map(fibonacci, NUMBERS))
+print(f"threads:    {time.time() - t:.2f}s")  # ~8s (!!)
+
+# 3. Multiprocessing — HAQIQIY parallel
+t = time.time()
+with ProcessPoolExecutor(4) as pool:
+    list(pool.map(fibonacci, NUMBERS))
+print(f"processes:  {time.time() - t:.2f}s")  # ~2s (4x tezroq)</code></pre>
+    </div>
+
+    <div class="callout warn">
+      <strong>⚠ Interview savol: "asyncio 10,000 concurrent request, threading 100 — nega?"</strong>
+      <p>Thread — OS-level resurs (~8 MB stack). 10,000 thread = 80 GB RAM + context switching overhead. Asyncio coroutine — userland obyekt (~1 KB), bitta thread'da event loop tomonidan boshqariladi. Context switch o'rniga <code>await</code> — imkoniyat paydo bo'lganda almashish.</p>
+    </div>
+
+    <h4>Python 3.13+ — no-GIL future</h4>
+    <p>Python 3.13 (2025 oktyabr) <code>--disable-gil</code> <strong>experimental</strong> flag bilan keldi. 3.14 (2026)'da optsiyali <code>PEP 703</code> implementation. 5-10 yil ichida GIL default'da o'chirilishi mumkin. Hozircha: <strong>production'da ishlatmang</strong> — ko'p C extension'lar thread-safe emas.</p>
+    <p><strong>Sub-interpreters (PEP 684)</strong> — 3.12'da kelgan. Har interpreter alohida GIL'ga ega. Multiprocessing'ga o'xshash, lekin process overhead'isiz. 2026'da stdlib <code>interpreters</code> modul bilan ishlash mumkin.</p>
+  </article>
+
+  <!-- 8.5 Memory model & GC -->
+  <article class="topic" id="python-memory" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.3</span>
+      <h3>memory model — reference counting, gc, slots</h3>
+    </div>
+    <div class="question">Python qanday xotira boshqaradi? Memory leak'lar qayerdan keladi?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Ikki bosqichli xotira boshqaruvi</h4>
+    <p>Python ikki mexanizmdan foydalanadi:</p>
+    <ol>
+      <li><strong>Reference counting (asosiy)</strong> — har object'da <code>ob_refcnt</code>. Reference 0'ga tushsa — darhol free qilinadi.</li>
+      <li><strong>Garbage collector (qo'shimcha)</strong> — cyclic reference'larni topadi. Generation-based (0, 1, 2) — yosh object'lar tez-tez tekshiriladi, eski kam.</li>
+    </ol>
+
+    <div class="code-block">
+      <div class="code-header"><span>refcount_gc_demo.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys, gc
+
+# 1. Reference counting — darhol o'chadi
+x = [1, 2, 3]
+print(sys.getrefcount(x))  # 2 (x + argument)
+y = x; print(sys.getrefcount(x))  # 3
+del y; print(sys.getrefcount(x))  # 2
+
+# 2. Circular reference — refcount yechmaydi, GC kerak
+class Node:
+    def __init__(self):
+        self.ref = None
+
+a, b = Node(), Node()
+a.ref = b
+b.ref = a          # cycle: a→b→a
+del a, b           # refcount=1 (o'zaro), xotira bo'shamaydi
+gc.collect()       # GC sikle'ni topadi va tozalaydi</code></pre>
+    </div>
+
+    <h4>__slots__ — xotirani 50-70% kamaytirish</h4>
+    <p>Default Python class'ida har instance <code>__dict__</code> bilan keladi — har attribute qo'shish uchun. Million instance'da — katta xotira.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>slots_benchmark.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys
+
+class Point:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+class PointSlots:
+    __slots__ = ('x', 'y')   # fixed attributes, no __dict__
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+p1 = Point(1, 2)
+p2 = PointSlots(1, 2)
+
+# __dict__ hajmi hisobga olinganda: Point ~296 bayt, PointSlots ~56 bayt
+# 1M instance: 296 MB vs 56 MB — 5x kamroq!
+print(sys.getsizeof(p1) + sys.getsizeof(p1.__dict__))  # ~296
+print(sys.getsizeof(p2))                                # ~56</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>__slots__ qachon ishlatiladi:</strong>
+      <ul>
+        <li>Data class'lar (Pydantic, dataclass) — millionlab instance yaratiladigan joylarda</li>
+        <li>Hot path — so'rov ishlovi, parsing</li>
+        <li><strong>Kamchilik</strong>: dynamic attribute qo'shib bo'lmaydi, subclass'larda ham <code>__slots__</code> kerak</li>
+      </ul>
+    </div>
+
+    <h4>Memory leak'larni topish — tracemalloc va py-spy</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>tracemalloc_leak.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import tracemalloc
+tracemalloc.start()
+
+# ... shubhali kod ishga tushadi ...
+run_suspect_code()
+
+snapshot = tracemalloc.take_snapshot()
+top_stats = snapshot.statistics('lineno')
+for stat in top_stats[:10]:
+    print(stat)
+# Chiqish: fayl:qator → qancha bayt, qancha blok</code></pre>
+    </div>
+
+    <p><strong>Production'da</strong>: <code>py-spy dump --pid 1234</code> (SIGKILL yubormasdan thread stack) yoki <code>memray</code> (flame graph bilan).</p>
+  </article>
+
+  <!-- 8.6 Data model — descriptors, metaclasses -->
+  <article class="topic" id="python-generators" data-search>
+    <div class="topic-header">
+      <span class="topic-id">8.4</span>
+      <h3>generators, iterators, context managers</h3>
+    </div>
+    <div class="question">Generator qanday ishlaydi? Lazy evaluation, memory efficiency va async generator'lar.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Generator — lazy iterator</h4>
+    <p>Generator — <code>yield</code> ishlatadigan funksiya. Birdan hamma narsani xotiraga yuklamaydi — element kerak bo'lganda beradi. 10 GB faylni parse qilish, cheksiz oqim (WebSocket, Kafka) — generator'siz imkonsiz.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>generator_memory.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import sys
+
+# List — xotirada
+list_ = [i * i for i in range(10_000_000)]
+print(sys.getsizeof(list_))  # ~89 MB
+
+# Generator — xotirada emas, "retsept"
+gen = (i * i for i in range(10_000_000))
+print(sys.getsizeof(gen))    # ~200 bayt
+
+# Iteration — bir vaqtda bitta element
+for sq in gen:  # xotira bosimsiz
+    process(sq)
+
+# Real use: faylni satr-satr o'qish (katta log)
+def read_large_file(path):
+    with open(path) as f:
+        for line in f:         # iterator — xotirada emas
+            yield line.strip()
+
+# Pipeline — lazy chain
+words = (line for line in read_large_file('access.log') if '500' in line)
+errors = (line for line in words if 'timeout' in line)
+# Hech narsa bajarilmadi — faqat hisoblagan vaqtda
+for e in errors: print(e)</code></pre>
+    </div>
+
+    <h4>Context manager — resurs boshqaruvi</h4>
+    <p>File, DB connection, lock — hamma narsa <code>with</code> bilan ochilib, avtomatik yopilishi kerak. Xatolik yuz bersa ham — <code>__exit__</code> chaqiriladi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>contextmanager_examples.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from contextlib import contextmanager, asynccontextmanager
+import time
+
+# Custom context manager — 1-liner decorator bilan
+@contextmanager
+def timer(label):
+    t = time.perf_counter()
+    yield
+    print(f"{label}: {time.perf_counter() - t:.3f}s")
+
+with timer("expensive_op"):
+    do_work()
+
+# Async context manager
+@asynccontextmanager
+async def db_transaction(session):
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+async with db_transaction(s) as tx:
+    await tx.execute(...)</code></pre>
+    </div>
+  </article>
+
+  <!-- 8.8 SQLAlchemy 2.0 async -->
+</section>
+
+<section class="section" id="part-9" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">09</span>
+      <h2 class="section-title">python types &amp; data model</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="pydantic-typing" data-search>
+    <div class="topic-header">
+      <span class="topic-id">9.1</span>
       <h3>pydantic v2 &amp; modern typing</h3>
     </div>
     <div class="question">Pydantic nima va u bilan qanday professional ishlash?</div>
@@ -4302,9 +4545,101 @@ def with_retry[T, **P](max_attempts: int = 3):
   </article>
 
   <!-- 8.3 FASTAPI ZERO TO MASTERY — EXPANDED -->
+  <article class="topic" id="python-datamodel" data-search>
+    <div class="topic-header">
+      <span class="topic-id">9.2</span>
+      <h3>data model — descriptors, metaclasses, dunder methods</h3>
+    </div>
+    <div class="question">Python'ning "sehri" qanday? Descriptor, metaclass, __init_subclass__ — qachon kerak?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Descriptors — attribute access protokoli</h4>
+    <p>Descriptor = <code>__get__</code>, <code>__set__</code>, <code>__delete__</code> metodlari bo'lgan class. Django ORM field'lari, SQLAlchemy Column, <code>property</code>, <code>classmethod</code>, <code>staticmethod</code> — hammasi descriptor.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>typed_descriptor.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">class Typed:
+    """Runtime type validation via descriptor"""
+    def __init__(self, expected_type):
+        self.expected_type = expected_type
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, instance, owner):
+        if instance is None: return self
+        return instance.__dict__[self.name]
+
+    def __set__(self, instance, value):
+        if not isinstance(value, self.expected_type):
+            raise TypeError(f"{self.name} must be {self.expected_type.__name__}")
+        instance.__dict__[self.name] = value
+
+class User:
+    name = Typed(str)
+    age  = Typed(int)
+
+u = User()
+u.name = "Komil"    # ok
+u.age = "25"        # TypeError: age must be int</code></pre>
+    </div>
+
+    <h4>Metaclasses — class'ning class'i</h4>
+    <p>Har class <code>type</code> metaclass'ining instance'i. Custom metaclass yozsangiz — class yaratilish vaqtida interfere qila olasiz. Django Model, SQLAlchemy declarative, ABC — hammasi metaclass ishlatadi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>metaclass_registry.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">class PluginRegistry(type):
+    """Har subclass avtomatik registry'ga qo'shiladi"""
+    plugins = {}
+    def __new__(mcs, name, bases, namespace):
+        cls = super().__new__(mcs, name, bases, namespace)
+        if bases:  # base class'ni qoldir
+            mcs.plugins[name] = cls
+        return cls
+
+class Plugin(metaclass=PluginRegistry): pass
+class PDFExporter(Plugin): pass
+class CSVExporter(Plugin): pass
+
+print(PluginRegistry.plugins)
+# {'PDFExporter': &lt;class 'PDFExporter'&gt;, 'CSVExporter': &lt;class 'CSVExporter'&gt;}</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Metaclass yoki __init_subclass__?</strong>
+      <p>Zamonaviy Python'da ko'p holda <strong>metaclass kerak emas</strong> — <code>__init_subclass__</code> yetadi. Metaclass faqat: (a) metaclass'dan metaclass meros, (b) class yaratilish kuchli o'zgartirish kerak bo'lsa. "Siz metaclass kerakmi deb shubha qilasiz — demak, kerak emas." — Tim Peters.</p>
+    </div>
+
+    <h4>Dunder metodlar — object'ni tilga integratsiya</h4>
+    <table class="term-table">
+      <thead><tr><th>Dunder</th><th>Protokol</th><th>Misol</th></tr></thead>
+      <tbody>
+        <tr><td>__eq__, __hash__</td><td>Tenglik + hashable (set/dict key)</td><td>dataclass(frozen=True)</td></tr>
+        <tr><td>__lt__, __le__, ...</td><td>Ordering — sorted() uchun</td><td>@functools.total_ordering</td></tr>
+        <tr><td>__iter__, __next__</td><td>Iterator protokoli</td><td>custom range</td></tr>
+        <tr><td>__enter__, __exit__</td><td>Context manager</td><td>with open(...)</td></tr>
+        <tr><td>__call__</td><td>Instance'ni funksiyadek chaqirish</td><td>LRUCache, Pipeline</td></tr>
+        <tr><td>__getattr__</td><td>Mavjud bo'lmagan attribute</td><td>dynamic proxy</td></tr>
+        <tr><td>__getitem__</td><td>obj[key] protokoli</td><td>custom collection</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 8.7 Generators & context managers -->
+</section>
+
+<section class="section" id="part-10" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">10</span>
+      <h2 class="section-title">fastapi mastery — app, middleware, auth</h2>
+    </div>
+  </div>
+
   <article class="topic" id="fastapi-mastery" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.3</span>
+      <span class="topic-id">10.1</span>
       <h3>fastapi — zero to production mastery</h3>
     </div>
     <div class="question">FastAPI'ni chuqur o'rganib, production-ready tizim qurish — poydevordan to professional darajagacha.</div>
@@ -5202,324 +5537,226 @@ def service(mock_dependencies):
   </article>
 
   <!-- 8.4 GIL, threading, multiprocessing -->
-  <article class="topic" id="python-concurrency" data-search>
+  <article class="topic" id="fastapi-middleware" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.4</span>
-      <h3>gil, threading, multiprocessing — qachon qaysi</h3>
+      <span class="topic-id">10.2</span>
+      <h3>middleware, lifespan, background tasks</h3>
     </div>
-    <div class="question">Python'da haqiqiy parallelizm qanday? GIL nima uchun bor, qanday chetlab o'tiladi?</div>
+    <div class="question">FastAPI request hayot siklini qanday tushunamiz? Lifespan, middleware, background task orasidagi farq.</div>
     <div class="answer-label">javob</div>
 
-    <div class="intuition">
-      <div class="label">GIL — Global Interpreter Lock</div>
-      <p><strong>GIL = Python interpreter'ida bir vaqtning o'zida faqat bitta thread bytecode bajara oladigan qulf.</strong> Nega kerak? CPython'ning memory manager'i (reference counting) thread-safe emas. Har object'da <code>ob_refcnt</code> hisoblagichi bor — ikkita thread bir vaqtda o'zgartirsa, race condition → memory corruption. GIL shuni oldini oladi.</p>
-      <p><strong>Oqibat:</strong> 16 yadroli kompyuterda CPU-bound Python kodi faqat 1 yadroda ishlaydi. Biroq I/O vaqtida GIL bo'shatiladi — shuning uchun asyncio va threading I/O uchun foydali.</p>
+    <h4>Request lifecycle</h4>
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-req" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
+      </defs>
+      <rect class="node-rect-alt" x="20" y="60" width="90" height="50"/>
+      <text x="65" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Request</text>
+
+      <rect class="node-rect" x="130" y="60" width="100" height="50"/>
+      <text x="180" y="80" fill="#00ff88" font-size="11" text-anchor="middle" font-weight="700">Middleware</text>
+      <text x="180" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">CORS, auth, log</text>
+
+      <rect class="node-rect" x="250" y="60" width="110" height="50"/>
+      <text x="305" y="80" fill="#00eaff" font-size="11" text-anchor="middle" font-weight="700">Dependencies</text>
+      <text x="305" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">DB, current_user</text>
+
+      <rect class="node-rect" x="380" y="60" width="100" height="50"/>
+      <text x="430" y="80" fill="#b87eff" font-size="11" text-anchor="middle" font-weight="700">Endpoint</text>
+      <text x="430" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">async def</text>
+
+      <rect class="node-rect" x="500" y="60" width="110" height="50"/>
+      <text x="555" y="80" fill="#ff00aa" font-size="11" text-anchor="middle" font-weight="700">Response</text>
+      <text x="555" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">+ background</text>
+
+      <rect class="node-rect-alt" x="630" y="60" width="70" height="50"/>
+      <text x="665" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Client</text>
+
+      <line class="edge-line" x1="110" y1="85" x2="130" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="230" y1="85" x2="250" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="360" y1="85" x2="380" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="480" y1="85" x2="500" y2="85" marker-end="url(#arrow-req)"/>
+      <line class="edge-line" x1="610" y1="85" x2="630" y2="85" marker-end="url(#arrow-req)"/>
+
+      <text x="360" y="155" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">Lifespan (app startup/shutdown) — bu hammasining tashqarisida, bir marta ishlaydi</text>
+      <text x="360" y="175" fill="#ff00aa" font-size="10" text-anchor="middle">Background tasks — response qaytganidan keyin ishlaydi (short-lived) · Celery/ARQ — real async queue</text>
+    </svg>
     </div>
 
-    <h4>3 ta parallelizm modeli</h4>
-
-    <table class="term-table">
-      <thead><tr><th></th><th>asyncio</th><th>threading</th><th>multiprocessing</th></tr></thead>
-      <tbody>
-        <tr><td>GIL ta'siri</td><td>Bitta thread, GIL muammo emas</td><td>GIL tufayli CPU-bound'ga yaroqsiz</td><td>Har process o'z GIL'i — to'liq parallel</td></tr>
-        <tr><td>Memory</td><td>Shared (bitta process)</td><td>Shared</td><td>Ajralgan (IPC kerak)</td></tr>
-        <tr><td>Overhead</td><td>Eng past (~1 KB/task)</td><td>O'rta (~8 MB/thread)</td><td>Eng yuqori (~50 MB/process)</td></tr>
-        <tr><td>Ideal ish</td><td>I/O-heavy (HTTP, DB)</td><td>Blocking lib (legacy C)</td><td>CPU-heavy (ML, rendering)</td></tr>
-        <tr><td>Scale</td><td>10,000+ concurrent</td><td>100-500 thread</td><td>CPU yadrolar soni</td></tr>
-      </tbody>
-    </table>
+    <h4>Lifespan — startup va shutdown</h4>
 
     <div class="code-block">
-      <div class="code-header"><span>cpu_bound_benchmark.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+      <div class="code-header"><span>lifespan.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from contextlib import asynccontextmanager
+from fastapi import FastAPI
 
-def fibonacci(n):
-    if n &lt; 2: return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    app.state.redis = await Redis.from_url("redis://cache:6379")
+    app.state.http = AsyncClient(timeout=10)
+    print("app started")
+    yield
+    # shutdown — SIGTERM keldi, graceful cleanup
+    await app.state.http.aclose()
+    await app.state.redis.close()
+    print("app stopped")
 
-NUMBERS = [35, 35, 35, 35]  # 4 ta CPU-bound ish
-
-# 1. Sequential — bazaviy
-t = time.time()
-[fibonacci(n) for n in NUMBERS]
-print(f"sequential: {time.time() - t:.2f}s")  # ~8s
-
-# 2. Threading — GIL tufayli FOYDASIZ (CPU-bound uchun)
-t = time.time()
-with ThreadPoolExecutor(4) as pool:
-    list(pool.map(fibonacci, NUMBERS))
-print(f"threads:    {time.time() - t:.2f}s")  # ~8s (!!)
-
-# 3. Multiprocessing — HAQIQIY parallel
-t = time.time()
-with ProcessPoolExecutor(4) as pool:
-    list(pool.map(fibonacci, NUMBERS))
-print(f"processes:  {time.time() - t:.2f}s")  # ~2s (4x tezroq)</code></pre>
+app = FastAPI(lifespan=lifespan)</code></pre>
     </div>
+
+    <h4>Middleware — request/response manipulyatsiya</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>request_id_middleware.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import uuid, time
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        req_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
+        request.state.request_id = req_id
+        t = time.perf_counter()
+        response = await call_next(request)
+        response.headers['X-Request-ID'] = req_id
+        response.headers['X-Response-Time'] = f"{(time.perf_counter()-t)*1000:.1f}ms"
+        return response
+
+app.add_middleware(RequestIDMiddleware)</code></pre>
+    </div>
+
+    <h4>BackgroundTasks vs Celery/ARQ</h4>
+    <div class="callout warn">
+      <strong>⚠ BackgroundTasks — faqat "oddiy, qisqa" ishlar uchun:</strong>
+      <ul>
+        <li>Fire-and-forget email, audit log, metrik yuborish (&lt;5 sekund)</li>
+        <li><strong>Durable emas</strong>: server crash = ish yo'qoladi</li>
+        <li>Retry yo'q, scheduling yo'q, monitoring yo'q</li>
+      </ul>
+      <p>Kritik ishlar (payment, large file processing) uchun — <strong>Celery</strong>, <strong>ARQ</strong> (asyncio-native, Redis), <strong>Dramatiq</strong>, yoki AWS SQS/EventBridge.</p>
+    </div>
+  </article>
+
+  <!-- 8.10 Auth patterns -->
+  <article class="topic" id="fastapi-auth" data-search>
+    <div class="topic-header">
+      <span class="topic-id">10.3</span>
+      <h3>authentication patterns — oauth2, jwt, refresh tokens, scopes</h3>
+    </div>
+    <div class="question">Production auth tizim qanday qurilgan? JWT access + refresh, OAuth2 scopes va RBAC.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>JWT access + refresh token flow</h4>
+    <p>Access token qisqa umrli (15 daqiqa) — ko'p ishlatiladi, o'g'irlansa — ta'sir kam. Refresh token uzun (7-30 kun), faqat yangi access olish uchun, HTTP-only cookie'da.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>auth.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from datetime import datetime, timedelta, timezone
+from jose import jwt, JWTError
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+
+SECRET = settings.JWT_SECRET
+ALGO = "HS256"
+ACCESS_TTL = timedelta(minutes=15)
+REFRESH_TTL = timedelta(days=7)
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/auth/login",
+    scopes={
+        "orders:read": "View orders",
+        "orders:write": "Create/modify orders",
+        "admin": "Admin operations",
+    },
+)
+
+def create_tokens(user_id: str, scopes: list[str]) -> dict:
+    now = datetime.now(timezone.utc)
+    access = jwt.encode(
+        {"sub": user_id, "scopes": scopes, "type": "access",
+         "exp": now + ACCESS_TTL, "iat": now, "jti": str(uuid.uuid4())},
+        SECRET, ALGO)
+    refresh = jwt.encode(
+        {"sub": user_id, "type": "refresh",
+         "exp": now + REFRESH_TTL, "iat": now, "jti": str(uuid.uuid4())},
+        SECRET, ALGO)
+    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+
+async def get_current_user(
+    security_scopes: SecurityScopes,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    try:
+        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+        if payload.get("type") != "access":
+            raise JWTError("wrong token type")
+        user_id = payload["sub"]
+        token_scopes = payload.get("scopes", [])
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
+
+    # Required scope check
+    for scope in security_scopes.scopes:
+        if scope not in token_scopes:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"missing scope: {scope}"
+            )
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "inactive user")
+    return user
+
+# Endpoint — scope talab qiluvchi
+@app.post("/orders")
+async def create_order(
+    user: User = Security(get_current_user, scopes=["orders:write"])
+):
+    return await service.create(user)</code></pre>
+    </div>
+
+    <h4>Auth strategiyalarini taqqoslash</h4>
+    <table class="term-table">
+      <thead><tr><th>Strategiya</th><th>Use case</th><th>Kamchilik</th></tr></thead>
+      <tbody>
+        <tr><td>Session (cookie)</td><td>Server-rendered app, SSO</td><td>CSRF, sticky session yoki shared store</td></tr>
+        <tr><td>JWT access-only</td><td>Stateless API, mobile</td><td>Revocation qiyin (blacklist kerak)</td></tr>
+        <tr><td>JWT access + refresh</td><td>SPA, mobile — industry standard</td><td>Refresh token saqlash ehtiyotkorlik</td></tr>
+        <tr><td>OAuth2 authorization code + PKCE</td><td>3rd-party SSO (Google, GitHub)</td><td>OAuth provider'ga bog'liq</td></tr>
+        <tr><td>API key</td><td>B2B, internal service</td><td>Leak = full access, rotation qiyin</td></tr>
+        <tr><td>mTLS</td><td>Service-to-service (zero-trust)</td><td>Cert management overhead</td></tr>
+      </tbody>
+    </table>
 
     <div class="callout warn">
-      <strong>⚠ Interview savol: "asyncio 10,000 concurrent request, threading 100 — nega?"</strong>
-      <p>Thread — OS-level resurs (~8 MB stack). 10,000 thread = 80 GB RAM + context switching overhead. Asyncio coroutine — userland obyekt (~1 KB), bitta thread'da event loop tomonidan boshqariladi. Context switch o'rniga <code>await</code> — imkoniyat paydo bo'lganda almashish.</p>
-    </div>
-
-    <h4>Python 3.13+ — no-GIL future</h4>
-    <p>Python 3.13 (2025 oktyabr) <code>--disable-gil</code> <strong>experimental</strong> flag bilan keldi. 3.14 (2026)'da optsiyali <code>PEP 703</code> implementation. 5-10 yil ichida GIL default'da o'chirilishi mumkin. Hozircha: <strong>production'da ishlatmang</strong> — ko'p C extension'lar thread-safe emas.</p>
-    <p><strong>Sub-interpreters (PEP 684)</strong> — 3.12'da kelgan. Har interpreter alohida GIL'ga ega. Multiprocessing'ga o'xshash, lekin process overhead'isiz. 2026'da stdlib <code>interpreters</code> modul bilan ishlash mumkin.</p>
-  </article>
-
-  <!-- 8.5 Memory model & GC -->
-  <article class="topic" id="python-memory" data-search>
-    <div class="topic-header">
-      <span class="topic-id">8.5</span>
-      <h3>memory model — reference counting, gc, slots</h3>
-    </div>
-    <div class="question">Python qanday xotira boshqaradi? Memory leak'lar qayerdan keladi?</div>
-    <div class="answer-label">javob</div>
-
-    <h4>Ikki bosqichli xotira boshqaruvi</h4>
-    <p>Python ikki mexanizmdan foydalanadi:</p>
-    <ol>
-      <li><strong>Reference counting (asosiy)</strong> — har object'da <code>ob_refcnt</code>. Reference 0'ga tushsa — darhol free qilinadi.</li>
-      <li><strong>Garbage collector (qo'shimcha)</strong> — cyclic reference'larni topadi. Generation-based (0, 1, 2) — yosh object'lar tez-tez tekshiriladi, eski kam.</li>
-    </ol>
-
-    <div class="code-block">
-      <div class="code-header"><span>refcount_gc_demo.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import sys, gc
-
-# 1. Reference counting — darhol o'chadi
-x = [1, 2, 3]
-print(sys.getrefcount(x))  # 2 (x + argument)
-y = x; print(sys.getrefcount(x))  # 3
-del y; print(sys.getrefcount(x))  # 2
-
-# 2. Circular reference — refcount yechmaydi, GC kerak
-class Node:
-    def __init__(self):
-        self.ref = None
-
-a, b = Node(), Node()
-a.ref = b
-b.ref = a          # cycle: a→b→a
-del a, b           # refcount=1 (o'zaro), xotira bo'shamaydi
-gc.collect()       # GC sikle'ni topadi va tozalaydi</code></pre>
-    </div>
-
-    <h4>__slots__ — xotirani 50-70% kamaytirish</h4>
-    <p>Default Python class'ida har instance <code>__dict__</code> bilan keladi — har attribute qo'shish uchun. Million instance'da — katta xotira.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>slots_benchmark.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import sys
-
-class Point:
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-class PointSlots:
-    __slots__ = ('x', 'y')   # fixed attributes, no __dict__
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-p1 = Point(1, 2)
-p2 = PointSlots(1, 2)
-
-# __dict__ hajmi hisobga olinganda: Point ~296 bayt, PointSlots ~56 bayt
-# 1M instance: 296 MB vs 56 MB — 5x kamroq!
-print(sys.getsizeof(p1) + sys.getsizeof(p1.__dict__))  # ~296
-print(sys.getsizeof(p2))                                # ~56</code></pre>
-    </div>
-
-    <div class="callout">
-      <strong>__slots__ qachon ishlatiladi:</strong>
+      <strong>⚠ Security musts:</strong>
       <ul>
-        <li>Data class'lar (Pydantic, dataclass) — millionlab instance yaratiladigan joylarda</li>
-        <li>Hot path — so'rov ishlovi, parsing</li>
-        <li><strong>Kamchilik</strong>: dynamic attribute qo'shib bo'lmaydi, subclass'larda ham <code>__slots__</code> kerak</li>
+        <li><strong>Password hashing</strong>: <code>bcrypt</code> yoki <code>argon2</code> (OWASP tavsiyasi). Plain SHA256 — hech qachon.</li>
+        <li><strong>Token storage (SPA)</strong>: refresh token — httpOnly + Secure + SameSite=Strict cookie. localStorage XSS'ga ochiq.</li>
+        <li><strong>Rate limiting</strong>: login endpoint'ga — IP + account based. Bot attack'dan himoya.</li>
+        <li><strong>Refresh rotation</strong>: refresh ishlatilganda — eski bekor, yangisi berilsin. Reuse detection = "token o'g'irlandi" signal.</li>
       </ul>
     </div>
-
-    <h4>Memory leak'larni topish — tracemalloc va py-spy</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>tracemalloc_leak.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import tracemalloc
-tracemalloc.start()
-
-# ... shubhali kod ishga tushadi ...
-run_suspect_code()
-
-snapshot = tracemalloc.take_snapshot()
-top_stats = snapshot.statistics('lineno')
-for stat in top_stats[:10]:
-    print(stat)
-# Chiqish: fayl:qator → qancha bayt, qancha blok</code></pre>
-    </div>
-
-    <p><strong>Production'da</strong>: <code>py-spy dump --pid 1234</code> (SIGKILL yubormasdan thread stack) yoki <code>memray</code> (flame graph bilan).</p>
   </article>
 
-  <!-- 8.6 Data model — descriptors, metaclasses -->
-  <article class="topic" id="python-datamodel" data-search>
-    <div class="topic-header">
-      <span class="topic-id">8.6</span>
-      <h3>data model — descriptors, metaclasses, dunder methods</h3>
+  <!-- 8.11 Testing strategies -->
+</section>
+
+<section class="section" id="part-11" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">11</span>
+      <h2 class="section-title">data layer, testing &amp; production engineering</h2>
     </div>
-    <div class="question">Python'ning "sehri" qanday? Descriptor, metaclass, __init_subclass__ — qachon kerak?</div>
-    <div class="answer-label">javob</div>
+  </div>
 
-    <h4>Descriptors — attribute access protokoli</h4>
-    <p>Descriptor = <code>__get__</code>, <code>__set__</code>, <code>__delete__</code> metodlari bo'lgan class. Django ORM field'lari, SQLAlchemy Column, <code>property</code>, <code>classmethod</code>, <code>staticmethod</code> — hammasi descriptor.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>typed_descriptor.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">class Typed:
-    """Runtime type validation via descriptor"""
-    def __init__(self, expected_type):
-        self.expected_type = expected_type
-
-    def __set_name__(self, owner, name):
-        self.name = name
-
-    def __get__(self, instance, owner):
-        if instance is None: return self
-        return instance.__dict__[self.name]
-
-    def __set__(self, instance, value):
-        if not isinstance(value, self.expected_type):
-            raise TypeError(f"{self.name} must be {self.expected_type.__name__}")
-        instance.__dict__[self.name] = value
-
-class User:
-    name = Typed(str)
-    age  = Typed(int)
-
-u = User()
-u.name = "Komil"    # ok
-u.age = "25"        # TypeError: age must be int</code></pre>
-    </div>
-
-    <h4>Metaclasses — class'ning class'i</h4>
-    <p>Har class <code>type</code> metaclass'ining instance'i. Custom metaclass yozsangiz — class yaratilish vaqtida interfere qila olasiz. Django Model, SQLAlchemy declarative, ABC — hammasi metaclass ishlatadi.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>metaclass_registry.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">class PluginRegistry(type):
-    """Har subclass avtomatik registry'ga qo'shiladi"""
-    plugins = {}
-    def __new__(mcs, name, bases, namespace):
-        cls = super().__new__(mcs, name, bases, namespace)
-        if bases:  # base class'ni qoldir
-            mcs.plugins[name] = cls
-        return cls
-
-class Plugin(metaclass=PluginRegistry): pass
-class PDFExporter(Plugin): pass
-class CSVExporter(Plugin): pass
-
-print(PluginRegistry.plugins)
-# {'PDFExporter': &lt;class 'PDFExporter'&gt;, 'CSVExporter': &lt;class 'CSVExporter'&gt;}</code></pre>
-    </div>
-
-    <div class="callout">
-      <strong>Metaclass yoki __init_subclass__?</strong>
-      <p>Zamonaviy Python'da ko'p holda <strong>metaclass kerak emas</strong> — <code>__init_subclass__</code> yetadi. Metaclass faqat: (a) metaclass'dan metaclass meros, (b) class yaratilish kuchli o'zgartirish kerak bo'lsa. "Siz metaclass kerakmi deb shubha qilasiz — demak, kerak emas." — Tim Peters.</p>
-    </div>
-
-    <h4>Dunder metodlar — object'ni tilga integratsiya</h4>
-    <table class="term-table">
-      <thead><tr><th>Dunder</th><th>Protokol</th><th>Misol</th></tr></thead>
-      <tbody>
-        <tr><td>__eq__, __hash__</td><td>Tenglik + hashable (set/dict key)</td><td>dataclass(frozen=True)</td></tr>
-        <tr><td>__lt__, __le__, ...</td><td>Ordering — sorted() uchun</td><td>@functools.total_ordering</td></tr>
-        <tr><td>__iter__, __next__</td><td>Iterator protokoli</td><td>custom range</td></tr>
-        <tr><td>__enter__, __exit__</td><td>Context manager</td><td>with open(...)</td></tr>
-        <tr><td>__call__</td><td>Instance'ni funksiyadek chaqirish</td><td>LRUCache, Pipeline</td></tr>
-        <tr><td>__getattr__</td><td>Mavjud bo'lmagan attribute</td><td>dynamic proxy</td></tr>
-        <tr><td>__getitem__</td><td>obj[key] protokoli</td><td>custom collection</td></tr>
-      </tbody>
-    </table>
-  </article>
-
-  <!-- 8.7 Generators & context managers -->
-  <article class="topic" id="python-generators" data-search>
-    <div class="topic-header">
-      <span class="topic-id">8.7</span>
-      <h3>generators, iterators, context managers</h3>
-    </div>
-    <div class="question">Generator qanday ishlaydi? Lazy evaluation, memory efficiency va async generator'lar.</div>
-    <div class="answer-label">javob</div>
-
-    <h4>Generator — lazy iterator</h4>
-    <p>Generator — <code>yield</code> ishlatadigan funksiya. Birdan hamma narsani xotiraga yuklamaydi — element kerak bo'lganda beradi. 10 GB faylni parse qilish, cheksiz oqim (WebSocket, Kafka) — generator'siz imkonsiz.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>generator_memory.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import sys
-
-# List — xotirada
-list_ = [i * i for i in range(10_000_000)]
-print(sys.getsizeof(list_))  # ~89 MB
-
-# Generator — xotirada emas, "retsept"
-gen = (i * i for i in range(10_000_000))
-print(sys.getsizeof(gen))    # ~200 bayt
-
-# Iteration — bir vaqtda bitta element
-for sq in gen:  # xotira bosimsiz
-    process(sq)
-
-# Real use: faylni satr-satr o'qish (katta log)
-def read_large_file(path):
-    with open(path) as f:
-        for line in f:         # iterator — xotirada emas
-            yield line.strip()
-
-# Pipeline — lazy chain
-words = (line for line in read_large_file('access.log') if '500' in line)
-errors = (line for line in words if 'timeout' in line)
-# Hech narsa bajarilmadi — faqat hisoblagan vaqtda
-for e in errors: print(e)</code></pre>
-    </div>
-
-    <h4>Context manager — resurs boshqaruvi</h4>
-    <p>File, DB connection, lock — hamma narsa <code>with</code> bilan ochilib, avtomatik yopilishi kerak. Xatolik yuz bersa ham — <code>__exit__</code> chaqiriladi.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>contextmanager_examples.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from contextlib import contextmanager, asynccontextmanager
-import time
-
-# Custom context manager — 1-liner decorator bilan
-@contextmanager
-def timer(label):
-    t = time.perf_counter()
-    yield
-    print(f"{label}: {time.perf_counter() - t:.3f}s")
-
-with timer("expensive_op"):
-    do_work()
-
-# Async context manager
-@asynccontextmanager
-async def db_transaction(session):
-    try:
-        yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
-
-async with db_transaction(s) as tx:
-    await tx.execute(...)</code></pre>
-    </div>
-  </article>
-
-  <!-- 8.8 SQLAlchemy 2.0 async -->
   <article class="topic" id="sqlalchemy-async" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.8</span>
+      <span class="topic-id">11.1</span>
       <h3>sqlalchemy 2.0 async — sessions, n+1, unit of work</h3>
     </div>
     <div class="question">FastAPI bilan async SQLAlchemy qanday to'g'ri qo'llaniladi? N+1 va connection leak'larni qanday oldini olish?</div>
@@ -5627,216 +5864,9 @@ async def good_joined(db):
   </article>
 
   <!-- 8.9 FastAPI middleware, lifespan, background -->
-  <article class="topic" id="fastapi-middleware" data-search>
-    <div class="topic-header">
-      <span class="topic-id">8.9</span>
-      <h3>middleware, lifespan, background tasks</h3>
-    </div>
-    <div class="question">FastAPI request hayot siklini qanday tushunamiz? Lifespan, middleware, background task orasidagi farq.</div>
-    <div class="answer-label">javob</div>
-
-    <h4>Request lifecycle</h4>
-    <div class="svg-diagram">
-    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <marker id="arrow-req" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
-      </defs>
-      <rect class="node-rect-alt" x="20" y="60" width="90" height="50"/>
-      <text x="65" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Request</text>
-
-      <rect class="node-rect" x="130" y="60" width="100" height="50"/>
-      <text x="180" y="80" fill="#00ff88" font-size="11" text-anchor="middle" font-weight="700">Middleware</text>
-      <text x="180" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">CORS, auth, log</text>
-
-      <rect class="node-rect" x="250" y="60" width="110" height="50"/>
-      <text x="305" y="80" fill="#00eaff" font-size="11" text-anchor="middle" font-weight="700">Dependencies</text>
-      <text x="305" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">DB, current_user</text>
-
-      <rect class="node-rect" x="380" y="60" width="100" height="50"/>
-      <text x="430" y="80" fill="#b87eff" font-size="11" text-anchor="middle" font-weight="700">Endpoint</text>
-      <text x="430" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">async def</text>
-
-      <rect class="node-rect" x="500" y="60" width="110" height="50"/>
-      <text x="555" y="80" fill="#ff00aa" font-size="11" text-anchor="middle" font-weight="700">Response</text>
-      <text x="555" y="96" fill="#8ba08b" font-size="9" text-anchor="middle">+ background</text>
-
-      <rect class="node-rect-alt" x="630" y="60" width="70" height="50"/>
-      <text x="665" y="84" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Client</text>
-
-      <line class="edge-line" x1="110" y1="85" x2="130" y2="85" marker-end="url(#arrow-req)"/>
-      <line class="edge-line" x1="230" y1="85" x2="250" y2="85" marker-end="url(#arrow-req)"/>
-      <line class="edge-line" x1="360" y1="85" x2="380" y2="85" marker-end="url(#arrow-req)"/>
-      <line class="edge-line" x1="480" y1="85" x2="500" y2="85" marker-end="url(#arrow-req)"/>
-      <line class="edge-line" x1="610" y1="85" x2="630" y2="85" marker-end="url(#arrow-req)"/>
-
-      <text x="360" y="155" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">Lifespan (app startup/shutdown) — bu hammasining tashqarisida, bir marta ishlaydi</text>
-      <text x="360" y="175" fill="#ff00aa" font-size="10" text-anchor="middle">Background tasks — response qaytganidan keyin ishlaydi (short-lived) · Celery/ARQ — real async queue</text>
-    </svg>
-    </div>
-
-    <h4>Lifespan — startup va shutdown</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>lifespan.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from contextlib import asynccontextmanager
-from fastapi import FastAPI
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # startup
-    app.state.redis = await Redis.from_url("redis://cache:6379")
-    app.state.http = AsyncClient(timeout=10)
-    print("app started")
-    yield
-    # shutdown — SIGTERM keldi, graceful cleanup
-    await app.state.http.aclose()
-    await app.state.redis.close()
-    print("app stopped")
-
-app = FastAPI(lifespan=lifespan)</code></pre>
-    </div>
-
-    <h4>Middleware — request/response manipulyatsiya</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>request_id_middleware.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import uuid, time
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        req_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
-        request.state.request_id = req_id
-        t = time.perf_counter()
-        response = await call_next(request)
-        response.headers['X-Request-ID'] = req_id
-        response.headers['X-Response-Time'] = f"{(time.perf_counter()-t)*1000:.1f}ms"
-        return response
-
-app.add_middleware(RequestIDMiddleware)</code></pre>
-    </div>
-
-    <h4>BackgroundTasks vs Celery/ARQ</h4>
-    <div class="callout warn">
-      <strong>⚠ BackgroundTasks — faqat "oddiy, qisqa" ishlar uchun:</strong>
-      <ul>
-        <li>Fire-and-forget email, audit log, metrik yuborish (&lt;5 sekund)</li>
-        <li><strong>Durable emas</strong>: server crash = ish yo'qoladi</li>
-        <li>Retry yo'q, scheduling yo'q, monitoring yo'q</li>
-      </ul>
-      <p>Kritik ishlar (payment, large file processing) uchun — <strong>Celery</strong>, <strong>ARQ</strong> (asyncio-native, Redis), <strong>Dramatiq</strong>, yoki AWS SQS/EventBridge.</p>
-    </div>
-  </article>
-
-  <!-- 8.10 Auth patterns -->
-  <article class="topic" id="fastapi-auth" data-search>
-    <div class="topic-header">
-      <span class="topic-id">8.10</span>
-      <h3>authentication patterns — oauth2, jwt, refresh tokens, scopes</h3>
-    </div>
-    <div class="question">Production auth tizim qanday qurilgan? JWT access + refresh, OAuth2 scopes va RBAC.</div>
-    <div class="answer-label">javob</div>
-
-    <h4>JWT access + refresh token flow</h4>
-    <p>Access token qisqa umrli (15 daqiqa) — ko'p ishlatiladi, o'g'irlansa — ta'sir kam. Refresh token uzun (7-30 kun), faqat yangi access olish uchun, HTTP-only cookie'da.</p>
-
-    <div class="code-block">
-      <div class="code-header"><span>auth.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from datetime import datetime, timedelta, timezone
-from jose import jwt, JWTError
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
-
-SECRET = settings.JWT_SECRET
-ALGO = "HS256"
-ACCESS_TTL = timedelta(minutes=15)
-REFRESH_TTL = timedelta(days=7)
-
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/login",
-    scopes={
-        "orders:read": "View orders",
-        "orders:write": "Create/modify orders",
-        "admin": "Admin operations",
-    },
-)
-
-def create_tokens(user_id: str, scopes: list[str]) -> dict:
-    now = datetime.now(timezone.utc)
-    access = jwt.encode(
-        {"sub": user_id, "scopes": scopes, "type": "access",
-         "exp": now + ACCESS_TTL, "iat": now, "jti": str(uuid.uuid4())},
-        SECRET, ALGO)
-    refresh = jwt.encode(
-        {"sub": user_id, "type": "refresh",
-         "exp": now + REFRESH_TTL, "iat": now, "jti": str(uuid.uuid4())},
-        SECRET, ALGO)
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
-
-async def get_current_user(
-    security_scopes: SecurityScopes,
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    try:
-        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
-        if payload.get("type") != "access":
-            raise JWTError("wrong token type")
-        user_id = payload["sub"]
-        token_scopes = payload.get("scopes", [])
-    except JWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
-
-    # Required scope check
-    for scope in security_scopes.scopes:
-        if scope not in token_scopes:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                f"missing scope: {scope}"
-            )
-
-    user = await db.get(User, user_id)
-    if not user or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "inactive user")
-    return user
-
-# Endpoint — scope talab qiluvchi
-@app.post("/orders")
-async def create_order(
-    user: User = Security(get_current_user, scopes=["orders:write"])
-):
-    return await service.create(user)</code></pre>
-    </div>
-
-    <h4>Auth strategiyalarini taqqoslash</h4>
-    <table class="term-table">
-      <thead><tr><th>Strategiya</th><th>Use case</th><th>Kamchilik</th></tr></thead>
-      <tbody>
-        <tr><td>Session (cookie)</td><td>Server-rendered app, SSO</td><td>CSRF, sticky session yoki shared store</td></tr>
-        <tr><td>JWT access-only</td><td>Stateless API, mobile</td><td>Revocation qiyin (blacklist kerak)</td></tr>
-        <tr><td>JWT access + refresh</td><td>SPA, mobile — industry standard</td><td>Refresh token saqlash ehtiyotkorlik</td></tr>
-        <tr><td>OAuth2 authorization code + PKCE</td><td>3rd-party SSO (Google, GitHub)</td><td>OAuth provider'ga bog'liq</td></tr>
-        <tr><td>API key</td><td>B2B, internal service</td><td>Leak = full access, rotation qiyin</td></tr>
-        <tr><td>mTLS</td><td>Service-to-service (zero-trust)</td><td>Cert management overhead</td></tr>
-      </tbody>
-    </table>
-
-    <div class="callout warn">
-      <strong>⚠ Security musts:</strong>
-      <ul>
-        <li><strong>Password hashing</strong>: <code>bcrypt</code> yoki <code>argon2</code> (OWASP tavsiyasi). Plain SHA256 — hech qachon.</li>
-        <li><strong>Token storage (SPA)</strong>: refresh token — httpOnly + Secure + SameSite=Strict cookie. localStorage XSS'ga ochiq.</li>
-        <li><strong>Rate limiting</strong>: login endpoint'ga — IP + account based. Bot attack'dan himoya.</li>
-        <li><strong>Refresh rotation</strong>: refresh ishlatilganda — eski bekor, yangisi berilsin. Reuse detection = "token o'g'irlandi" signal.</li>
-      </ul>
-    </div>
-  </article>
-
-  <!-- 8.11 Testing strategies -->
   <article class="topic" id="fastapi-testing" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.11</span>
+      <span class="topic-id">11.2</span>
       <h3>testing strategies — pytest, fixtures, testcontainers</h3>
     </div>
     <div class="question">Production-grade testing piramidasi: unit, integration, e2e. Real DB bilan qanday test yozamiz?</div>
@@ -5934,7 +5964,7 @@ async def test_create_order_success(client, db):
   <!-- 8.12 Performance tuning -->
   <article class="topic" id="fastapi-performance" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.12</span>
+      <span class="topic-id">11.3</span>
       <h3>performance — uvicorn, gunicorn, orjson, streaming</h3>
     </div>
     <div class="question">FastAPI'ni qanday optimallashtiramiz? Worker soni, JSON serialization, response streaming.</div>
@@ -6021,7 +6051,7 @@ async def chat(body: ChatRequest):
   <!-- 8.13 Production deployment -->
   <article class="topic" id="fastapi-production" data-search>
     <div class="topic-header">
-      <span class="topic-id">8.13</span>
+      <span class="topic-id">11.4</span>
       <h3>production deployment — graceful shutdown, health checks, observability</h3>
     </div>
     <div class="question">Kubernetes'da FastAPI qanday to'g'ri ishlaydi? SIGTERM, readiness, zero-downtime.</div>
@@ -6178,17 +6208,17 @@ async def create_order(...):
 
 
 <!-- ════════════ SECTION 09: DEVOPS & CLOUD ════════════ -->
-<section class="section" id="part-9" data-search>
+<section class="section" id="part-12" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">09</span>
+      <span class="section-num">12</span>
       <h2 class="section-title">devops &amp; cloud — docker, kubernetes, ci/cd</h2>
     </div>
   </div>
 
   <article class="topic" id="docker-deep" data-search>
     <div class="topic-header">
-      <span class="topic-id">9.1</span>
+      <span class="topic-id">12.1</span>
       <h3>docker — multi-stage, security, optimization</h3>
     </div>
     <div class="question">Production-grade Dockerfile qanday yoziladi?</div>
@@ -6262,7 +6292,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--worker
 
   <article class="topic" id="kubernetes-deep" data-search>
     <div class="topic-header">
-      <span class="topic-id">9.2</span>
+      <span class="topic-id">12.2</span>
       <h3>kubernetes — production deployment</h3>
     </div>
     <div class="question">K8s'da ilovani qanday to'g'ri deploy qilish?</div>
@@ -6411,7 +6441,7 @@ spec:
 
   <article class="topic" id="cicd-pipeline" data-search>
     <div class="topic-header">
-      <span class="topic-id">9.3</span>
+      <span class="topic-id">12.3</span>
       <h3>ci/cd — github actions production pipeline</h3>
     </div>
     <div class="question">Professional CI/CD pipeline qanday tuziladi?</div>
@@ -6507,17 +6537,17 @@ jobs:
 </section>
 
 <!-- ════════════ SECTION 10: OBSERVABILITY ════════════ -->
-<section class="section" id="part-10" data-search>
+<section class="section" id="part-13" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">10</span>
+      <span class="section-num">13</span>
       <h2 class="section-title">observability &amp; reliability</h2>
     </div>
   </div>
 
   <article class="topic" id="three-pillars" data-search>
     <div class="topic-header">
-      <span class="topic-id">10.1</span>
+      <span class="topic-id">13.1</span>
       <h3>3 pillars — logs, metrics, traces</h3>
     </div>
     <div class="question">Production tizimda nima sodir bo'layotganini qanday bilish?</div>
@@ -6682,10 +6712,10 @@ Severity levels:
   </article>
 </section>
 <!-- ════════════ SECTION 11: AWS CLOUD ════════════ -->
-<section class="section" id="part-11" data-search>
+<section class="section" id="part-14" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">11</span>
+      <span class="section-num">14</span>
       <h2 class="section-title">aws cloud — core services, ai va cost optimization</h2>
     </div>
   </div>
@@ -6693,7 +6723,7 @@ Severity levels:
   <!-- 11.1 AWS nima va nega -->
   <article class="topic" id="aws-intro" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.1</span>
+      <span class="topic-id">14.1</span>
       <h3>aws — nima, nega va qanday ishlaydi</h3>
     </div>
     <div class="question">AWS nima, nega hamma uni ishlatadi va asosiy tushunchalari qanday?</div>
@@ -6796,7 +6826,7 @@ Severity levels:
   <!-- 11.2 Compute: EC2, Lambda, Fargate -->
   <article class="topic" id="aws-compute" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.2</span>
+      <span class="topic-id">14.2</span>
       <h3>compute — ec2, lambda, fargate</h3>
     </div>
     <div class="question">AWS'da kod qayerda ishlaydi? Qachon VM, qachon serverless, qachon container?</div>
@@ -6897,7 +6927,7 @@ def lambda_handler(event, context):
   <!-- 11.3 Storage: S3, EBS, EFS -->
   <article class="topic" id="aws-storage" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.3</span>
+      <span class="topic-id">14.3</span>
       <h3>storage — s3, ebs, efs</h3>
     </div>
     <div class="question">Ma'lumotni qayerda saqlash kerak? Object storage vs Block vs File.</div>
@@ -6964,7 +6994,7 @@ s3.put_bucket_lifecycle_configuration(
   <!-- 11.4 Database: RDS, DynamoDB, Aurora -->
   <article class="topic" id="aws-database" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.4</span>
+      <span class="topic-id">14.4</span>
       <h3>database — rds, aurora, dynamodb, elasticache</h3>
     </div>
     <div class="question">AWS'da database uchun qanday variantlar bor?</div>
@@ -7059,7 +7089,7 @@ resp = table.query(
   <!-- 11.5 Networking: VPC, CloudFront -->
   <article class="topic" id="aws-networking" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.5</span>
+      <span class="topic-id">14.5</span>
       <h3>networking — vpc, cloudfront, route53</h3>
     </div>
     <div class="question">AWS'da tarmoq qanday qurilgan? VPC, subnet, security group nima?</div>
@@ -7164,7 +7194,7 @@ resp = table.query(
   <!-- 11.6 Containers: ECS, EKS -->
   <article class="topic" id="aws-containers" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.6</span>
+      <span class="topic-id">14.6</span>
       <h3>containers — ecs, eks, ecr</h3>
     </div>
     <div class="question">Docker container'larni AWS'da qanday ishlatamiz?</div>
@@ -7203,7 +7233,7 @@ docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.2.3</code></pre>
   <!-- 11.7 IAM & Security -->
   <article class="topic" id="aws-iam" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.7</span>
+      <span class="topic-id">14.7</span>
       <h3>iam &amp; security — identity, access, encryption</h3>
     </div>
     <div class="question">AWS'da kim nima qila olishini qanday nazorat qilamiz?</div>
@@ -7268,7 +7298,7 @@ docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.2.3</code></pre>
   <!-- 11.8 AI services on AWS -->
   <article class="topic" id="aws-ai" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.8</span>
+      <span class="topic-id">14.8</span>
       <h3>aws ai services — bedrock, sagemaker, kendra, textract</h3>
     </div>
     <div class="question">AWS'da AI/ML workload'larni qanday ishlatamiz?</div>
@@ -7405,7 +7435,7 @@ print(result['content'][0]['text'])</code></pre>
   <!-- 11.9 Observability on AWS -->
   <article class="topic" id="aws-observability" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.9</span>
+      <span class="topic-id">14.9</span>
       <h3>observability — cloudwatch, x-ray</h3>
     </div>
     <div class="question">AWS'da tizim sog'lig'ini qanday kuzatamiz?</div>
@@ -7444,7 +7474,7 @@ def process_order(order_id):
   <!-- 11.10 Cost optimization -->
   <article class="topic" id="aws-cost" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.10</span>
+      <span class="topic-id">14.10</span>
       <h3>cost optimization — billingni kamaytirish strategiyalari</h3>
     </div>
     <div class="question">AWS hisobini qanday kamaytirish mumkin? 50% gacha tejash realmi?</div>
@@ -7491,7 +7521,7 @@ def process_order(order_id):
   <!-- 11.11 Well-Architected Framework -->
   <article class="topic" id="aws-waf" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.11</span>
+      <span class="topic-id">14.11</span>
       <h3>well-architected framework — 6 pillar</h3>
     </div>
     <div class="question">AWS'ning rasmiy "to'g'ri qurish" ko'rsatmasi qanday?</div>
@@ -7577,17 +7607,17 @@ def process_order(order_id):
 </section>
 
 
-<section class="section" id="part-12" data-search>
+<section class="section" id="part-15" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">12</span>
+      <span class="section-num">15</span>
       <h2 class="section-title">resilience patterns — circuit breaker, hedging, bulkhead</h2>
     </div>
   </div>
 
   <article class="topic" id="circuit-breaker" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.1</span>
+      <span class="topic-id">15.1</span>
       <h3>circuit breaker — cascading failure oldini olish</h3>
     </div>
     <div class="question">Downstream service sekinlashdi. Sizning service'ingiz 5000 RPS bilan uni bombardmon qilib turibdi. Barcha thread poll'lar band — butun tizim yonadi. Nima qilish kerak?</div>
@@ -7691,7 +7721,7 @@ async def charge(amount):
 
   <article class="topic" id="hedging-timeout" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.2</span>
+      <span class="topic-id">15.2</span>
       <h3>timeout + hedging — tail latency'ni 10x kamaytirish</h3>
     </div>
     <div class="question">p99 latency 2 sekund, p50 50ms. Foydalanuvchi p99'ga tushsa loading spinner ko'radi. Qanday 50ms'ga qisqartirish?</div>
@@ -7779,7 +7809,7 @@ async def get_user(user_id: int):
 
   <article class="topic" id="bulkhead" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.3</span>
+      <span class="topic-id">15.3</span>
       <h3>bulkhead — bitta muammo butun tizimni buzmasin</h3>
     </div>
     <div class="question">Bitta slow downstream barcha thread'ni band qildi — boshqa tezlikdagi downstream'lar ham blokirovka. Yechim?</div>
@@ -7831,17 +7861,17 @@ async def process_order():
     <p><strong>Sizing formula:</strong> <code>max_concurrent ≈ service_rps × p99_latency</code>. Agar downstream 100 RPS hazm qiladi va p99 = 200ms bo'lsa — pool 20 yetarli (100 × 0.2).</p>
   </article>
 </section>
-<section class="section" id="part-13" data-search>
+<section class="section" id="part-16" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">13</span>
+      <span class="section-num">16</span>
       <h2 class="section-title">tail latency, pool sizing, backpressure</h2>
     </div>
   </div>
 
   <article class="topic" id="tail-latency" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.1</span>
+      <span class="topic-id">16.1</span>
       <h3>tail latency — nega p99.9 muhim</h3>
     </div>
     <div class="question">p50 = 50ms, p99 = 200ms. Dashboard'da "hammasi yaxshi". Nega user'lar "sekin" deb shikoyat qiladi?</div>
@@ -7881,7 +7911,7 @@ async def process_order():
 
   <article class="topic" id="pool-sizing" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.2</span>
+      <span class="topic-id">16.2</span>
       <h3>connection pool sizing — matematik yondashuv</h3>
     </div>
     <div class="question">PostgreSQL pool_size = 5? 50? 500? Ko'pi yaxshimi?</div>
@@ -7955,7 +7985,7 @@ httpx.AsyncClient(
 
   <article class="topic" id="backpressure" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.3</span>
+      <span class="topic-id">16.3</span>
       <h3>backpressure — upstream'ni sekinlashtirish</h3>
     </div>
     <div class="question">Queue'ga 10K msg/s keladi, consumer 1K/s ishlay oladi. Queue cheksiz o'sa — memory tugaydi. Yechim?</div>
@@ -8009,17 +8039,17 @@ async def producer():
     </div>
   </article>
 </section>
-<section class="section" id="part-14" data-search>
+<section class="section" id="part-17" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">14</span>
+      <span class="section-num">17</span>
       <h2 class="section-title">production observability — eBPF, tracing, SLO</h2>
     </div>
   </div>
 
   <article class="topic" id="ebpf-observability" data-search>
     <div class="topic-header">
-      <span class="topic-id">14.1</span>
+      <span class="topic-id">17.1</span>
       <h3>eBPF — kernel'ni code bilan kuzatish</h3>
     </div>
     <div class="question">App bir xil infra'da, bir xil kod, ba'zan p99 200ms o'rniga 2s. Stack trace yo'q, log'lar toza. Nima qilish?</div>
@@ -8075,7 +8105,7 @@ docker run --pid=host --privileged grafana/beyla \
 
   <article class="topic" id="slo-errorbudget" data-search>
     <div class="topic-header">
-      <span class="topic-id">14.2</span>
+      <span class="topic-id">17.2</span>
       <h3>SLO / SLI / error budget — reliability engineering</h3>
     </div>
     <div class="question">"Biz 99.9% uptime'ga intilamiz" — bu qoida qanday amaliy hal qilinadi? Deploy'ni qachon to'xtatish kerak?</div>
@@ -8155,7 +8185,7 @@ groups:
 
   <article class="topic" id="chaos-engineering" data-search>
     <div class="topic-header">
-      <span class="topic-id">14.3</span>
+      <span class="topic-id">17.3</span>
       <h3>chaos engineering — failure'ni o'zingiz tashlash</h3>
     </div>
     <div class="question">Production'da hech qachon test qilinmagan failure senariylari. Real downtime bo'lguncha bilmaysiz. Yechim?</div>
@@ -8242,17 +8272,17 @@ proxy.destroy()
   <p class="part-divider-desc">LLM fundamentals, barcha RAG arxitekturalari (naive → agentic → GraphRAG), embeddings va vector search, fine-tuning (LoRA/QLoRA), agentic AI, multi-agent systems, MCP, production AI: LLM observability/evaluation, guardrails va structured outputs. Zamonaviy AI — passiv chatbot emas, aktiv ish bajaruvchi production komponent.</p>
 </div>
 
-<section class="section" id="part-15" data-search>
+<section class="section" id="part-18" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">15</span>
+      <span class="section-num">18</span>
       <h2 class="section-title">llm fundamentals — how language models work</h2>
     </div>
   </div>
 
   <article class="topic" id="llm-basics" data-search>
     <div class="topic-header">
-      <span class="topic-id">15.1</span>
+      <span class="topic-id">18.1</span>
       <h3>llm qanday ishlaydi — engineering perspective</h3>
     </div>
     <div class="question">LLM black box emas — uni tushunish kerak. Qanday ishlaydi?</div>
@@ -8480,17 +8510,17 @@ async def chat_with_tools(user_message: str):
     </div>
   </article>
 </section>
-<section class="section" id="part-16" data-search>
+<section class="section" id="part-19" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">16</span>
+      <span class="section-num">19</span>
       <h2 class="section-title">rag architectures — naive to agentic</h2>
     </div>
   </div>
 
   <article class="topic" id="rag-intro" data-search>
     <div class="topic-header">
-      <span class="topic-id">16.1</span>
+      <span class="topic-id">19.1</span>
       <h3>nima uchun rag va qanday ishlaydi</h3>
     </div>
     <div class="question">LLM biladi, lekin sizning ma'lumotlaringizni bilmaydi. Qanday qo'shiladi?</div>
@@ -8669,7 +8699,7 @@ async def answer_question(question: str, tenant_id: str) -> dict:
 
   <article class="topic" id="rag-advanced" data-search>
     <div class="topic-header">
-      <span class="topic-id">16.2</span>
+      <span class="topic-id">19.2</span>
       <h3>hybrid rag — production baseline</h3>
     </div>
     <div class="question">Pure vector search yetarli emas — hybrid nima va nega?</div>
@@ -8901,7 +8931,7 @@ async def agentic_rag_answer(question: str, max_iterations: int = 5):
 
   <article class="topic" id="rag-evaluation" data-search>
     <div class="topic-header">
-      <span class="topic-id">16.3</span>
+      <span class="topic-id">19.3</span>
       <h3>rag evaluation — how to measure</h3>
     </div>
     <div class="question">RAG sistemangiz yaxshi ishlayaptimi qanday bilasiz?</div>
@@ -8946,17 +8976,17 @@ print(result)
     </div>
   </article>
 </section>
-<section class="section" id="part-17" data-search>
+<section class="section" id="part-20" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">17</span>
+      <span class="section-num">20</span>
       <h2 class="section-title">embeddings &amp; vector search — deep dive</h2>
     </div>
   </div>
 
   <article class="topic" id="embedding-models" data-search>
     <div class="topic-header">
-      <span class="topic-id">17.1</span>
+      <span class="topic-id">20.1</span>
       <h3>embedding models — tanlov va tradeoffs</h3>
     </div>
     <div class="question">Qaysi embedding model'ni qachon tanlash?</div>
@@ -9009,7 +9039,7 @@ response = await openai.embeddings.create(
 
   <article class="topic" id="rerankers-advanced" data-search>
     <div class="topic-header">
-      <span class="topic-id">17.2</span>
+      <span class="topic-id">20.2</span>
       <h3>rerankers — precision booster</h3>
     </div>
     <div class="question">Reranker nima va nega 30-50% accuracy oshiradi?</div>
@@ -9060,17 +9090,17 @@ from jina_ai_search_foundation_sdk import JinaRerank</code></pre>
     </div>
   </article>
 </section>
-<section class="section" id="part-18" data-search>
+<section class="section" id="part-21" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">18</span>
+      <span class="section-num">21</span>
       <h2 class="section-title">fine-tuning &amp; local llms — lora, qlora, deployment</h2>
     </div>
   </div>
 
   <article class="topic" id="when-finetune" data-search>
     <div class="topic-header">
-      <span class="topic-id">18.1</span>
+      <span class="topic-id">21.1</span>
       <h3>qachon fine-tune kerak vs rag vs prompting</h3>
     </div>
     <div class="question">Prompt, RAG, yoki fine-tuning — qaysi birini qachon?</div>
@@ -9106,7 +9136,7 @@ Hybrid pattern — eng kuchli:
 
   <article class="topic" id="lora-qlora" data-search>
     <div class="topic-header">
-      <span class="topic-id">18.2</span>
+      <span class="topic-id">21.2</span>
       <h3>lora va qlora — parameter-efficient fine-tuning</h3>
     </div>
     <div class="question">LoRA va QLoRA qanday ishlaydi va qanday qilinadi?</div>
@@ -9297,17 +9327,17 @@ print(response.choices[0].message.content)</code></pre>
     </div>
   </article>
 </section>
-<section class="section" id="part-19" data-search>
+<section class="section" id="part-22" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">19</span>
+      <span class="section-num">22</span>
       <h2 class="section-title">ai agents, multi-agent &amp; mcp</h2>
     </div>
   </div>
 
   <article class="topic" id="agent-fundamentals" data-search>
     <div class="topic-header">
-      <span class="topic-id">19.1</span>
+      <span class="topic-id">22.1</span>
       <h3>ai agents — autonomous task executors</h3>
     </div>
     <div class="question">AI agent nima va passiv chatbot'dan qanday farq qiladi?</div>
@@ -9436,7 +9466,7 @@ async def react_agent(task: str, max_steps: int = 10):
 
   <article class="topic" id="multi-agent" data-search>
     <div class="topic-header">
-      <span class="topic-id">19.2</span>
+      <span class="topic-id">22.2</span>
       <h3>multi-agent systems — orchestration patterns</h3>
     </div>
     <div class="question">Bir agent yetmaydi — ko'p agent qanday birga ishlaydi?</div>
@@ -9586,7 +9616,7 @@ result = crew.kickoff()</code></pre>
 
   <article class="topic" id="mcp-protocol" data-search>
     <div class="topic-header">
-      <span class="topic-id">19.3</span>
+      <span class="topic-id">22.3</span>
       <h3>mcp — model context protocol</h3>
     </div>
     <div class="question">MCP nima va nima uchun muhim?</div>
@@ -9767,17 +9797,17 @@ if __name__ == "__main__":
     </div>
   </article>
 </section>
-<section class="section" id="part-20" data-search>
+<section class="section" id="part-23" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">20</span>
+      <span class="section-num">23</span>
       <h2 class="section-title">production ai — llmops, safety, cost optimization</h2>
     </div>
   </div>
 
   <article class="topic" id="llmops" data-search>
     <div class="topic-header">
-      <span class="topic-id">20.1</span>
+      <span class="topic-id">23.1</span>
       <h3>llmops — production ai lifecycle</h3>
     </div>
     <div class="question">AI tizimni production'da qanday boshqarish?</div>
@@ -9930,17 +9960,17 @@ async def safe_llm_call(prompt: str):
     </div>
   </article>
 </section>
-<section class="section" id="part-21" data-search>
+<section class="section" id="part-24" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">21</span>
+      <span class="section-num">24</span>
       <h2 class="section-title">advanced RAG — chunking, reranking, GraphRAG</h2>
     </div>
   </div>
 
   <article class="topic" id="chunking-strategies" data-search>
     <div class="topic-header">
-      <span class="topic-id">21.1</span>
+      <span class="topic-id">24.1</span>
       <h3>chunking strategies — RAG sifatining 50%'i</h3>
     </div>
     <div class="question">Matnni qanday bo'laklar ga bo'lish kerak? Bu savol RAG muvaffaqiyatini belgilaydi.</div>
@@ -10027,7 +10057,7 @@ async def embed_chunks(doc: str, chunks: list[str]):
 
   <article class="topic" id="hybrid-search-reranking" data-search>
     <div class="topic-header">
-      <span class="topic-id">21.2</span>
+      <span class="topic-id">24.2</span>
       <h3>hybrid search + reranking — production standard 2026</h3>
     </div>
     <div class="question">Faqat vector search yetarli emas. Senior production RAG qanday ishlaydi?</div>
@@ -10190,17 +10220,17 @@ async def graph_query(query: str) -> str:
     </div>
   </article>
 </section>
-<section class="section" id="part-22" data-search>
+<section class="section" id="part-25" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">22</span>
+      <span class="section-num">25</span>
       <h2 class="section-title">LLM observability &amp; evaluation — production AI</h2>
     </div>
   </div>
 
   <article class="topic" id="llm-evals" data-search>
     <div class="topic-header">
-      <span class="topic-id">22.1</span>
+      <span class="topic-id">25.1</span>
       <h3>LLM eval — "ishlayabdi"dan "o'lchanadigan sifat"ga</h3>
     </div>
     <div class="question">AI feature deploy qildingiz. 3 hafta o'tdi. Ehtimoliy hallucination rate nima? Javob bera olasizmi?</div>
@@ -10314,7 +10344,7 @@ async def run_eval_suite(dataset_path: str, system_under_test):
 
   <article class="topic" id="llm-cost-tracking" data-search>
     <div class="topic-header">
-      <span class="topic-id">22.2</span>
+      <span class="topic-id">25.2</span>
       <h3>LLM cost &amp; observability — token/user tracking</h3>
     </div>
     <div class="question">Qaysi user qancha token yondiradi? Qaysi prompt eng qimmat? Production'da aniq javob bera olasizmi?</div>
@@ -10425,17 +10455,17 @@ async def llm_call(
     </div>
   </article>
 </section>
-<section class="section" id="part-23" data-search>
+<section class="section" id="part-26" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">23</span>
+      <span class="section-num">26</span>
       <h2 class="section-title">guardrails &amp; structured outputs — reliability</h2>
     </div>
   </div>
 
   <article class="topic" id="structured-outputs" data-search>
     <div class="topic-header">
-      <span class="topic-id">23.1</span>
+      <span class="topic-id">26.1</span>
       <h3>structured outputs — JSON schema, tool use</h3>
     </div>
     <div class="question">LLM javobi majburan JSON bo'lishi kerak. Qanday kafolatlash?</div>
@@ -10509,7 +10539,7 @@ validated = ExtractedOrder(**tool_input)
 
   <article class="topic" id="safety-guardrails" data-search>
     <div class="topic-header">
-      <span class="topic-id">23.2</span>
+      <span class="topic-id">26.2</span>
       <h3>safety guardrails — input/output filtering</h3>
     </div>
     <div class="question">LLM feature ishga tushdi. User abusive input yubordi, LLM toxic javob berdi. Bu productionni qanday himoya qilasiz?</div>
@@ -10609,10 +10639,10 @@ async def safe_llm_call(user_input: str):
   <p class="part-divider-desc">Real interview va production system design muammolari (URL shortener, chat, news feed, video streaming), advanced AI patterns, klassik design patterns (SOLID, GoF), microservices arxitekturasi, va architecture decisions/trade-off framework'lari. Butun qo'llanmani sintez qilib, mustaqil tizim loyihalash uchun zaruriy bilim.</p>
 </div>
 
-<section class="section" id="part-24" data-search>
+<section class="section" id="part-27" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">24</span>
+      <span class="section-num">27</span>
       <h2 class="section-title">system design — interview &amp; production patterns</h2>
     </div>
   </div>
@@ -10620,7 +10650,7 @@ async def safe_llm_call(user_input: str):
   <!-- 18.1 URL SHORTENER -->
   <article class="topic" id="url-shortener" data-search>
     <div class="topic-header">
-      <span class="topic-id">24.1</span>
+      <span class="topic-id">27.1</span>
       <h3>url shortener — design bit.ly / tinyurl</h3>
     </div>
     <div class="question">Millionlab foydalanuvchi uchun URL qisqartirish xizmatini qanday loyihalash kerak?</div>
@@ -10859,7 +10889,7 @@ async def redirect(short_id: str):
   <!-- 18.2 CHAT SYSTEM -->
   <article class="topic" id="chat-system" data-search>
     <div class="topic-header">
-      <span class="topic-id">24.2</span>
+      <span class="topic-id">27.2</span>
       <h3>chat system — design whatsapp / telegram</h3>
     </div>
     <div class="question">Real-time chat tizimini qanday loyihalash kerak — 1 milliard foydalanuvchi uchun?</div>
@@ -11042,7 +11072,7 @@ async def handle_message(sender_id: str, data: dict):
   <!-- 18.3 NEWS FEED -->
   <article class="topic" id="news-feed" data-search>
     <div class="topic-header">
-      <span class="topic-id">24.3</span>
+      <span class="topic-id">27.3</span>
       <h3>news feed — design twitter/instagram feed</h3>
     </div>
     <div class="question">Social media feed'ni qanday loyihalash kerak? Fanout-on-write vs fanout-on-read?</div>
@@ -11173,7 +11203,7 @@ async def fanout_to_followers(user_id: str, post_id: str):
   <!-- 18.4 CONSISTENT HASHING -->
   <article class="topic" id="consistent-hashing" data-search>
     <div class="topic-header">
-      <span class="topic-id">24.4</span>
+      <span class="topic-id">27.4</span>
       <h3>consistent hashing — distributed data routing</h3>
     </div>
     <div class="question">Consistent hashing nima va Redis cluster, Cassandra, CDN'larda qanday ishlatiladi?</div>
@@ -11321,10 +11351,10 @@ replicas = ring.get_replica_servers(key, n=2)  # ha, replication uchun</code></p
     </div>
   </article>
 </section>
-<section class="section" id="part-25" data-search>
+<section class="section" id="part-28" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">25</span>
+      <span class="section-num">28</span>
       <h2 class="section-title">ai architecture — advanced patterns</h2>
     </div>
   </div>
@@ -11332,7 +11362,7 @@ replicas = ring.get_replica_servers(key, n=2)  # ha, replication uchun</code></p
   <!-- 19.1 GRAPHRAG -->
   <article class="topic" id="graphrag" data-search>
     <div class="topic-header">
-      <span class="topic-id">25.1</span>
+      <span class="topic-id">28.1</span>
       <h3>graphrag — knowledge graph + rag</h3>
     </div>
     <div class="question">Oddiy RAG nima uchun yetmaydi va GraphRAG qanday muammoni hal qiladi?</div>
@@ -11533,7 +11563,7 @@ Vector Context (O'xshash hujjatlar):
   <!-- 19.2 AI MEMORY SYSTEMS -->
   <article class="topic" id="ai-memory" data-search>
     <div class="topic-header">
-      <span class="topic-id">25.2</span>
+      <span class="topic-id">28.2</span>
       <h3>ai memory systems — short, long, episodic</h3>
     </div>
     <div class="question">AI agent qanday "eslab qoladi"? Memory architecture qanday quriladi?</div>
@@ -11718,7 +11748,7 @@ context = await memory.build_context("Auth module'da yangi feature qo'shish kera
   <!-- 19.3 SMALL LANGUAGE MODELS & MIXTURE OF EXPERTS -->
   <article class="topic" id="slm-moe" data-search>
     <div class="topic-header">
-      <span class="topic-id">25.3</span>
+      <span class="topic-id">28.3</span>
       <h3>slm, edge ai va mixture of experts (moe)</h3>
     </div>
     <div class="question">Hamma GPT-4 ishlatish shart emas — SLM va MoE qanday ishlaydi?</div>
@@ -11933,17 +11963,17 @@ async def smart_route(question: str, context: str = "") -> tuple[str, str]:
   </article>
 
 </section>
-<section class="section" id="part-26" data-search>
+<section class="section" id="part-29" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">26</span>
+      <span class="section-num">29</span>
       <h2 class="section-title">design patterns — production'da ishlatiluvchi</h2>
     </div>
   </div>
 
   <article class="topic" id="creational-patterns" data-search>
     <div class="topic-header">
-      <span class="topic-id">26.1</span>
+      <span class="topic-id">29.1</span>
       <h3>creational patterns — ob'ekt yaratish</h3>
     </div>
     <div class="question">Singleton, Factory, Builder — qachon va qanday ishlatiladi?</div>
@@ -12155,7 +12185,7 @@ query, params = (
 
   <article class="topic" id="structural-behavioral-patterns" data-search>
     <div class="topic-header">
-      <span class="topic-id">26.2</span>
+      <span class="topic-id">29.2</span>
       <h3>structural & behavioral patterns — zamonaviy</h3>
     </div>
     <div class="question">Repository, Strategy, Observer, Decorator — backend'da qanday qo'llanadi?</div>
@@ -12380,17 +12410,17 @@ async def create_order(data: OrderCreate, user: User = Depends(get_current_user)
     </div>
   </article>
 </section>
-<section class="section" id="part-27" data-search>
+<section class="section" id="part-30" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">27</span>
+      <span class="section-num">30</span>
       <h2 class="section-title">microservices — arxitektura va patterns</h2>
     </div>
   </div>
 
   <article class="topic" id="microservices-design" data-search>
     <div class="topic-header">
-      <span class="topic-id">27.1</span>
+      <span class="topic-id">30.1</span>
       <h3>microservices — qachon va qanday bo'linadi?</h3>
     </div>
     <div class="question">Monolith qachon microservices'ga aylantiriladi va qanday bo'linadi?</div>
@@ -12583,7 +12613,7 @@ class OrderSaga:
 
   <article class="topic" id="api-gateway-patterns" data-search>
     <div class="topic-header">
-      <span class="topic-id">27.2</span>
+      <span class="topic-id">30.2</span>
       <h3>api gateway, service mesh, observability</h3>
     </div>
     <div class="question">Microservices infratuzilmasi qanday boshqariladi — service discovery, tracing, health?</div>
@@ -12719,17 +12749,17 @@ async def process_order(order_id: str):
     </div>
   </article>
 </section>
-<section class="section" id="part-28" data-search>
+<section class="section" id="part-31" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">28</span>
+      <span class="section-num">31</span>
       <h2 class="section-title">architecture decisions &amp; trade-offs</h2>
     </div>
   </div>
 
   <article class="topic" id="tradeoffs-matrix" data-search>
     <div class="topic-header">
-      <span class="topic-id">28.1</span>
+      <span class="topic-id">31.1</span>
       <h3>tradeoffs matrix — umumiy qarorlar</h3>
     </div>
     <div class="question">Texnologiya tanlashda qanday tradeoff'lar bor?</div>
@@ -12832,7 +12862,7 @@ Rule: "Build differentiator, buy commodity"</div>
 
   <article class="topic" id="learning-path" data-search>
     <div class="topic-header">
-      <span class="topic-id">28.2</span>
+      <span class="topic-id">31.2</span>
       <h3>backend engineer — learning roadmap</h3>
     </div>
     <div class="question">Qanday tartibda o'rganish kerak? Junior'dan senior'gacha yo'l.</div>
@@ -12951,7 +12981,7 @@ Rule: "Build differentiator, buy commodity"</div>
 
   <article class="topic" id="final-principles" data-search>
     <div class="topic-header">
-      <span class="topic-id">28.3</span>
+      <span class="topic-id">31.3</span>
       <h3>umumiy tamoyillar — stayish qoidalari</h3>
     </div>
     <div class="answer-label">yakun</div>
