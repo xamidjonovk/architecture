@@ -9029,10 +9029,807 @@ async def smart_route(question: str, context: str = "") -> tuple[str, str]:
 </section>
 
 <!-- ══════════════════════════════════════════════════════ -->
-<!-- PART VII: SENIOR ENGINEERING DEEP-DIVES               -->
+<!-- PART VII: SOFTWARE ARCHITECTURE PATTERNS              -->
 <!-- ══════════════════════════════════════════════════════ -->
 <div class="part-divider" data-search>
   <div class="part-divider-roman">Part VII</div>
+  <h2 class="part-divider-title">software architecture <span class="accent">patterns</span></h2>
+  <p class="part-divider-desc">Design patterns, microservices, trade-off'lar va muhandislik tamoyillari. Kod yozish — muhandislikning kichik bir qismi. Katta tizimlarni loyihalash, refactor qilish, jamoa bilan ishlash — bular professional muhandisning asosiy mahorati.</p>
+</div>
+
+<!-- ════════════ SECTION 20: DESIGN PATTERNS ════════════ -->
+<section class="section" id="part-20" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">20</span>
+      <h2 class="section-title">design patterns — production'da ishlatiluvchi</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="creational-patterns" data-search>
+    <div class="topic-header">
+      <span class="topic-id">20.1</span>
+      <h3>creational patterns — ob'ekt yaratish</h3>
+    </div>
+    <div class="question">Singleton, Factory, Builder — qachon va qanday ishlatiladi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Design pattern nima va nima uchun kerak?</div>
+      <p>Design pattern — takror uchraidigan muammolarga isbotlangan yechimlar. Ixtiro qilish shart emas — 1994-yilda "Gang of Four" 23 ta klassik pattern'ni hujjatlashtirishdi. Bularni bilish: boshqalar yozgan kodni tushunish (masalan, "bu Factory pattern"), muloqotni qisqartirish ("Singleton ishlataylik" — uzun tushuntirish kerak emas), yaxshi arxitektura tanlash.</p>
+    </div>
+
+    <h4>Singleton — bitta nusxa</h4>
+
+    <div class="intuition">
+      <div class="label">Singleton qachon kerak?</div>
+      <p>Tizimda faqat bitta nusxa bo'lishi kerak bo'lgan narsalar: DB connection pool, konfigurasiya, logging instance. Python'da oddiy — module-level variable avtomatik singleton. Thread-safe singleton uchun esa ehtiyotkorlik kerak.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/singleton.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from functools import lru_cache
+from threading import Lock
+
+# ── Python'da eng sodda Singleton — module import ──
+# config.py
+class _Config:
+    def __init__(self):
+        self.db_url = "postgres://..."
+        self.debug = False
+
+_instance = _Config()  # Module import'da bir marta yaratiladi
+
+def get_config() -> _Config:
+    return _instance  # Har doim bir xil obyekt
+
+# ── Thread-safe Singleton (generic) ──
+class Singleton:
+    _instance = None
+    _lock: Lock = Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if not cls._instance:
+                cls._instance = super().__new__(cls)
+        return cls._instance
+
+# ── FastAPI'da: lru_cache bilan ──
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    db_url: str
+    api_key: str
+
+@lru_cache          # Bir marta ishlaydi, natijani cache'laydi = Singleton
+def get_settings() -> Settings:
+    return Settings()
+
+# ── Singleton anti-pattern: global state testing'ni qiyinlashtiradi ──
+# Testing uchun yaxshiroq: Dependency Injection
+# class MyService:
+#     def __init__(self, config: Config):  # inject
+#         self.config = config</code></pre>
+    </div>
+
+    <h4>Factory Pattern — ob'ekt yaratishni markazlashtirish</h4>
+
+    <div class="intuition">
+      <div class="label">Factory qachon kerak?</div>
+      <p>"Qaysi konkret sinf kerak" qarorini foydalanuvchidan yashirish. Masalan: payment provider tanlash — Stripe, Payme, Click — har biri alohida implementatsiya, lekin bir xil interfeys. Client faqat <code>PaymentFactory.create("payme")</code> deydi, ichida qaysi sinfni ishlatishni Factory hal qiladi.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/factory.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from abc import ABC, abstractmethod
+
+# ── Abstract Interface ──
+class PaymentProvider(ABC):
+    @abstractmethod
+    async def charge(self, amount: float, currency: str, card_token: str) -> dict:
+        ...
+
+    @abstractmethod
+    async def refund(self, payment_id: str, amount: float) -> dict:
+        ...
+
+# ── Concrete implementations ──
+class StripeProvider(PaymentProvider):
+    def __init__(self, api_key: str):
+        self.stripe = Stripe(api_key)
+
+    async def charge(self, amount, currency, card_token):
+        return await self.stripe.payment_intents.create(
+            amount=int(amount * 100),
+            currency=currency,
+            payment_method=card_token,
+        )
+
+    async def refund(self, payment_id, amount):
+        return await self.stripe.refunds.create(payment_intent=payment_id)
+
+class PaymeProvider(PaymentProvider):
+    async def charge(self, amount, currency, card_token):
+        # Payme API logikasi
+        ...
+
+    async def refund(self, payment_id, amount):
+        ...
+
+# ── Factory ──
+class PaymentFactory:
+    _providers: dict[str, type[PaymentProvider]] = {
+        "stripe": StripeProvider,
+        "payme": PaymeProvider,
+    }
+
+    @classmethod
+    def create(cls, provider_name: str, **kwargs) -> PaymentProvider:
+        if provider_name not in cls._providers:
+            raise ValueError(f"Unknown provider: {provider_name}. "
+                           f"Available: {list(cls._providers)}")
+        return cls._providers[provider_name](**kwargs)
+
+    @classmethod
+    def register(cls, name: str, provider_class: type[PaymentProvider]):
+        """Yangi provider qo'shish (Open/Closed principle)"""
+        cls._providers[name] = provider_class
+
+# ── Ishlatish ──
+provider = PaymentFactory.create("stripe", api_key=settings.STRIPE_KEY)
+result = await provider.charge(99.99, "USD", card_token)
+
+# ── Konfiguratsiyadan ──
+provider_name = settings.PAYMENT_PROVIDER  # "stripe" yoki "payme"
+provider = PaymentFactory.create(provider_name, **settings.payment_config)</code></pre>
+    </div>
+
+    <h4>Builder Pattern — murakkab ob'ektlar</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/builder.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from dataclasses import dataclass, field
+from typing import Self
+
+# ── SQL Query Builder ──
+class QueryBuilder:
+    """Method chaining bilan SQL query yaratish"""
+
+    def __init__(self, table: str):
+        self._table = table
+        self._conditions: list[str] = []
+        self._columns: list[str] = ["*"]
+        self._limit: int | None = None
+        self._offset: int = 0
+        self._order: str | None = None
+        self._params: list = []
+
+    def select(self, *columns: str) -> Self:
+        self._columns = list(columns)
+        return self
+
+    def where(self, condition: str, *values) -> Self:
+        param_start = len(self._params) + 1
+        self._conditions.append(
+            condition.replace("?", f"${param_start}")
+        )
+        self._params.extend(values)
+        return self
+
+    def limit(self, n: int) -> Self:
+        self._limit = n
+        return self
+
+    def offset(self, n: int) -> Self:
+        self._offset = n
+        return self
+
+    def order_by(self, column: str, direction: str = "ASC") -> Self:
+        self._order = f"{column} {direction}"
+        return self
+
+    def build(self) -> tuple[str, list]:
+        cols = ", ".join(self._columns)
+        sql = f"SELECT {cols} FROM {self._table}"
+        if self._conditions:
+            sql += " WHERE " + " AND ".join(self._conditions)
+        if self._order:
+            sql += f" ORDER BY {self._order}"
+        if self._limit:
+            sql += f" LIMIT {self._limit}"
+        if self._offset:
+            sql += f" OFFSET {self._offset}"
+        return sql, self._params
+
+# ── Ishlatish ──
+query, params = (
+    QueryBuilder("orders")
+    .select("id", "status", "total")
+    .where("tenant_id = ?", tenant_id)
+    .where("status = ?", "active")
+    .order_by("created_at", "DESC")
+    .limit(20)
+    .offset(40)
+    .build()
+)
+# SELECT id, status, total FROM orders
+# WHERE tenant_id = $1 AND status = $2
+# ORDER BY created_at DESC LIMIT 20 OFFSET 40</code></pre>
+    </div>
+  </article>
+
+  <article class="topic" id="structural-behavioral-patterns" data-search>
+    <div class="topic-header">
+      <span class="topic-id">20.2</span>
+      <h3>structural & behavioral patterns — zamonaviy</h3>
+    </div>
+    <div class="question">Repository, Strategy, Observer, Decorator — backend'da qanday qo'llanadi?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Repository Pattern — DB logikasini ajratish</h4>
+
+    <div class="intuition">
+      <div class="label">Repository nima uchun muhim?</div>
+      <p>Service layer to'g'ridan-to'g'ri DB bilan gapirsa — test yozish qiyin (real DB kerak), DB o'zgarsa (PostgreSQL → MongoDB) — butun service qayta yoziladi. Repository — ma'lumotlar bilan ishlash logikasini alohida qatlam. Service faqat <em>nima</em> istashini aytadi, Repository <em>qanday</em> olishni biladi.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/repository.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from abc import ABC, abstractmethod
+
+# ── Abstract interface ──
+class OrderRepository(ABC):
+    @abstractmethod
+    async def get_by_id(self, order_id: str) -> Order | None: ...
+    @abstractmethod
+    async def get_by_tenant(self, tenant_id: str, limit: int, offset: int) -> list[Order]: ...
+    @abstractmethod
+    async def create(self, data: OrderCreate, user_id: str) -> Order: ...
+    @abstractmethod
+    async def update_status(self, order_id: str, status: str) -> Order: ...
+
+# ── PostgreSQL implementatsiyasi ──
+class PostgresOrderRepository(OrderRepository):
+    def __init__(self, db):
+        self.db = db
+
+    async def get_by_id(self, order_id: str) -> Order | None:
+        row = await self.db.fetchrow(
+            "SELECT * FROM orders WHERE id = $1", order_id
+        )
+        return Order(**dict(row)) if row else None
+
+    async def get_by_tenant(self, tenant_id, limit, offset) -> list[Order]:
+        rows = await self.db.fetch(
+            """SELECT * FROM orders WHERE tenant_id = $1
+               ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
+            tenant_id, limit, offset
+        )
+        return [Order(**dict(r)) for r in rows]
+
+    async def create(self, data: OrderCreate, user_id: str) -> Order:
+        row = await self.db.fetchrow(
+            """INSERT INTO orders (id, user_id, product_id, quantity, status)
+               VALUES (gen_random_uuid(), $1, $2, $3, 'pending')
+               RETURNING *""",
+            user_id, data.product_id, data.quantity
+        )
+        return Order(**dict(row))
+
+    async def update_status(self, order_id: str, status: str) -> Order:
+        row = await self.db.fetchrow(
+            "UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
+            status, order_id
+        )
+        return Order(**dict(row))
+
+# ── In-memory implementatsiyasi (testing uchun!) ──
+class InMemoryOrderRepository(OrderRepository):
+    def __init__(self):
+        self._store: dict[str, Order] = {}
+
+    async def get_by_id(self, order_id: str) -> Order | None:
+        return self._store.get(order_id)
+
+    async def create(self, data: OrderCreate, user_id: str) -> Order:
+        order = Order(id=str(uuid.uuid4()), user_id=user_id, **data.dict())
+        self._store[order.id] = order
+        return order
+
+# ── Service — Repository inject qilinadi ──
+class OrderService:
+    def __init__(self, repo: OrderRepository):  # Abstract type!
+        self.repo = repo
+
+    async def create_order(self, data: OrderCreate, user: User) -> Order:
+        # Biznes logikasi faqat shu yerda
+        if data.quantity > 100:
+            raise ValueError("Maximum 100 ta buyurtma")
+        order = await self.repo.create(data, user.id)
+        await self.notify_warehouse(order)
+        return order
+
+# Dependency injection:
+# Production: OrderService(PostgresOrderRepository(db))
+# Test:       OrderService(InMemoryOrderRepository())</code></pre>
+    </div>
+
+    <h4>Strategy Pattern — algoritm almashtirish</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/strategy.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from abc import ABC, abstractmethod
+
+# ── Notification strategy ──
+class NotificationStrategy(ABC):
+    @abstractmethod
+    async def send(self, user: User, message: str) -> bool: ...
+
+class EmailStrategy(NotificationStrategy):
+    async def send(self, user, message):
+        await sendgrid.send(to=user.email, body=message)
+        return True
+
+class SMSStrategy(NotificationStrategy):
+    async def send(self, user, message):
+        await twilio.send(to=user.phone, body=message[:160])
+        return True
+
+class PushStrategy(NotificationStrategy):
+    async def send(self, user, message):
+        await fcm.send(token=user.device_token, body=message)
+        return True
+
+class MultiStrategy(NotificationStrategy):
+    """Bir nechta kanal — fallback bilan"""
+    def __init__(self, strategies: list[NotificationStrategy]):
+        self.strategies = strategies
+
+    async def send(self, user, message):
+        for strategy in self.strategies:
+            try:
+                success = await strategy.send(user, message)
+                if success:
+                    return True
+            except Exception:
+                continue  # Keyingi kanalga o'tish
+        return False
+
+# ── Notification service — strategy inject ──
+class NotificationService:
+    def __init__(self, strategy: NotificationStrategy):
+        self.strategy = strategy
+
+    async def notify(self, user: User, message: str):
+        return await self.strategy.send(user, message)
+
+    def set_strategy(self, strategy: NotificationStrategy):
+        self.strategy = strategy  # Runtime'da almashtirish
+
+# ── Konfiguratsiyadan strategy tanlash ──
+STRATEGIES = {
+    "email": EmailStrategy(),
+    "sms": SMSStrategy(),
+    "push": PushStrategy(),
+    "multi": MultiStrategy([PushStrategy(), EmailStrategy()]),
+}
+
+notifier = NotificationService(STRATEGIES[settings.NOTIFICATION_CHANNEL])</code></pre>
+    </div>
+
+    <h4>Observer Pattern — event system</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>patterns/observer.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import asyncio
+from collections import defaultdict
+
+# ── Simple async event bus ──
+class EventBus:
+    _instance = None
+    _handlers: dict[str, list] = defaultdict(list)
+
+    @classmethod
+    def subscribe(cls, event: str, handler):
+        """Event'ga handler qo'shish"""
+        cls._handlers[event].append(handler)
+
+    @classmethod
+    async def publish(cls, event: str, data: dict):
+        """Event chiqarish — barcha handler'larni chaqirish"""
+        handlers = cls._handlers.get(event, [])
+        if not handlers:
+            return
+        # Barcha handler'lar parallel ishlaydi
+        await asyncio.gather(
+            *[handler(data) for handler in handlers],
+            return_exceptions=True  # Bir handler xatosi boshqasini to'xtatmasin
+        )
+
+# ── Handler'lar ──
+async def send_order_confirmation(data: dict):
+    await email_service.send(
+        to=data["email"],
+        subject=f"Order #{data['order_id']} confirmed",
+        template="order_confirmation"
+    )
+
+async def update_inventory(data: dict):
+    await inventory_service.decrease(
+        product_id=data["product_id"],
+        quantity=data["quantity"]
+    )
+
+async def notify_warehouse(data: dict):
+    await warehouse_api.post("/new-order", json=data)
+
+# ── Subscribe ──
+EventBus.subscribe("order.created", send_order_confirmation)
+EventBus.subscribe("order.created", update_inventory)
+EventBus.subscribe("order.created", notify_warehouse)
+
+# ── Publish ──
+@router.post("/orders")
+async def create_order(data: OrderCreate, user: User = Depends(get_current_user)):
+    order = await order_service.create(data, user)
+
+    # Event chiqarish — handler'lar parallel ishlaydi
+    await EventBus.publish("order.created", {
+        "order_id": str(order.id),
+        "email": user.email,
+        "product_id": str(data.product_id),
+        "quantity": data.quantity,
+    })
+
+    return order</code></pre>
+    </div>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 21: MICROSERVICES ════════════ -->
+<section class="section" id="part-21" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">21</span>
+      <h2 class="section-title">microservices — arxitektura va patterns</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="microservices-design" data-search>
+    <div class="topic-header">
+      <span class="topic-id">21.1</span>
+      <h3>microservices — qachon va qanday bo'linadi?</h3>
+    </div>
+    <div class="question">Monolith qachon microservices'ga aylantiriladi va qanday bo'linadi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Eng ko'p qilinadigan xato — erta microservices</div>
+      <p>Deyarli hamma startup microservices bilan boshlaydi — bu xato. Microservices tarqatilgan tizim murakkabliklarini olib keladi: service discovery, network latency, distributed tracing, data consistency. 10 ta developer'gacha bo'lgan jamoa uchun yaxshi arxitekturalangan monolith ko'pincha yaxshiroq. <strong>Amazon'ning o'zi ham 2002-yilda monolith'da boshlagan</strong>, keyinroq bo'lingan.</p>
+      <p><strong>Qachon bo'lish kerak:</strong> jamoa 50+ bo'lganda (Conway's Law), bir qism alohida scale qilish kerak bo'lganda (masalan, ML inference 100x ko'proq resurs kerak), deploy tezligini oshirish uchun (independent deployment), texnologiya farqi kerak bo'lganda (Go service + Python ML).</p>
+    </div>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace">
+      <defs>
+        <marker id="arr-ms" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
+        <marker id="arr-ms-r" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#ff00aa"/></marker>
+      </defs>
+
+      <!-- LEFT: Monolith -->
+      <text x="115" y="20" fill="#ffb800" font-size="12" text-anchor="middle" font-weight="700">MONOLITH</text>
+      <rect x="30" y="30" width="170" height="240" rx="2" fill="#050908" stroke="#ffb800" stroke-width="2"/>
+      <rect x="45" y="50" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
+      <text x="115" y="73" fill="#ffb800" font-size="10" text-anchor="middle">Auth Module</text>
+      <rect x="45" y="95" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
+      <text x="115" y="118" fill="#ffb800" font-size="10" text-anchor="middle">Orders Module</text>
+      <rect x="45" y="140" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
+      <text x="115" y="163" fill="#ffb800" font-size="10" text-anchor="middle">Products Module</text>
+      <rect x="45" y="185" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
+      <text x="115" y="208" fill="#ffb800" font-size="10" text-anchor="middle">Notifications</text>
+      <rect x="45" y="230" width="140" height="30" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1"/>
+      <text x="115" y="250" fill="#ff00aa" font-size="9" text-anchor="middle">1 PostgreSQL (shared)</text>
+      <text x="115" y="295" fill="#6a8a6a" font-size="9" text-anchor="middle">+ Sodda debug</text>
+      <text x="115" y="310" fill="#6a8a6a" font-size="9" text-anchor="middle">+ Tez iterate</text>
+      <text x="115" y="325" fill="#ff4444" font-size="9" text-anchor="middle">- Deploy bog'liq</text>
+
+      <!-- Arrow -->
+      <text x="245" y="145" fill="#00ff88" font-size="20" text-anchor="middle">→</text>
+      <text x="245" y="162" fill="#6a8a6a" font-size="9" text-anchor="middle">evolve</text>
+
+      <!-- RIGHT: Microservices -->
+      <text x="520" y="20" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">MICROSERVICES</text>
+
+      <!-- API Gateway -->
+      <rect x="440" y="30" width="160" height="35" rx="2" fill="#0a1400" stroke="#00ff88" stroke-width="2"/>
+      <text x="520" y="53" fill="#00ff88" font-size="10" text-anchor="middle" font-weight="700">API Gateway</text>
+
+      <!-- Services -->
+      <rect x="280" y="100" width="110" height="45" rx="2" fill="#061a0e" stroke="#00ff88" stroke-width="1.5"/>
+      <text x="335" y="120" fill="#00ff88" font-size="10" text-anchor="middle" font-weight="700">Auth Service</text>
+      <text x="335" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Go + Redis</text>
+
+      <rect x="410" y="100" width="110" height="45" rx="2" fill="#050d14" stroke="#00eaff" stroke-width="1.5"/>
+      <text x="465" y="120" fill="#00eaff" font-size="10" text-anchor="middle" font-weight="700">Orders Service</text>
+      <text x="465" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Python + PG</text>
+
+      <rect x="540" y="100" width="110" height="45" rx="2" fill="#0f0a1a" stroke="#b87eff" stroke-width="1.5"/>
+      <text x="595" y="120" fill="#b87eff" font-size="10" text-anchor="middle" font-weight="700">ML Service</text>
+      <text x="595" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Python + GPU</text>
+
+      <rect x="340" y="185" width="110" height="45" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1.5"/>
+      <text x="395" y="205" fill="#ffb800" font-size="10" text-anchor="middle" font-weight="700">Notify Service</text>
+      <text x="395" y="220" fill="#6a8a6a" font-size="8" text-anchor="middle">Node + Kafka</text>
+
+      <rect x="475" y="185" width="110" height="45" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1.5"/>
+      <text x="530" y="205" fill="#ff00aa" font-size="10" text-anchor="middle" font-weight="700">Payment Service</text>
+      <text x="530" y="220" fill="#6a8a6a" font-size="8" text-anchor="middle">Java + PG</text>
+
+      <!-- Message bus -->
+      <rect x="300" y="265" width="370" height="30" rx="2" fill="#050908" stroke="#113322" stroke-width="1.5"/>
+      <text x="485" y="285" fill="#6a8a6a" font-size="9" text-anchor="middle">Kafka Event Bus — async communication</text>
+
+      <!-- Arrows -->
+      <line x1="520" y1="65" x2="335" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
+      <line x1="520" y1="65" x2="465" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
+      <line x1="520" y1="65" x2="595" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
+      <line x1="465" y1="145" x2="395" y2="185" stroke="#ffb800" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-ms)"/>
+      <line x1="465" y1="145" x2="530" y2="185" stroke="#ff00aa" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-ms-r)"/>
+      <line x1="395" y1="230" x2="395" y2="265" stroke="#6a8a6a" stroke-width="1" stroke-dasharray="4 3"/>
+      <line x1="530" y1="230" x2="530" y2="265" stroke="#6a8a6a" stroke-width="1" stroke-dasharray="4 3"/>
+    </svg>
+    </div>
+
+    <h4>Microservices decomposition — qanday bo'linadi?</h4>
+
+    <div class="intuition">
+      <div class="label">Domain-Driven Design (DDD) — to'g'ri bo'linish usuli</div>
+      <p>Texnik chiziqlar bo'yicha emas (database, UI, API) — <strong>biznes domeniga ko'ra</strong> bo'lish. <em>Bounded Context</em>: "Orders" jarayoni — buyurtma yaratish, kuzatish, bekor qilish. Bu bitta service. "Payments" — to'lov, qaytarish, cheklar. Bu alohida service. Ular bir-birini Kafka event orqali xabardor qiladi, to'g'ridan-to'g'ri DB'ga kirmaydi.</p>
+    </div>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Bo'linish tamoyili</th><th>Izoh</th><th>Misol</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Business capability</strong></td><td>Biznes funksiyasiga ko'ra</td><td>Orders, Payments, Inventory, Auth</td></tr>
+        <tr><td><strong>Domain</strong></td><td>DDD Bounded Context</td><td>Customer, Catalog, Fulfillment</td></tr>
+        <tr><td><strong>Team ownership</strong></td><td>Conway's Law — bir jamoa = bir service</td><td>Backend team → core API, ML team → inference</td></tr>
+        <tr><td><strong>Scale requirement</strong></td><td>Alohida scale kerak bo'lgan</td><td>ML inference → GPU pods, API → CPU pods</td></tr>
+        <tr><td><strong>Technology fit</strong></td><td>Har service o'z stack'ida</td><td>Go auth (tez), Python ML, Node realtime</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h4>Service communication patterns</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>service_communication.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">"""
+Microservices o'rtasida kommunikatsiya:
+1. Sync REST/gRPC — darhol javob kerak
+2. Async Kafka — eventual consistency OK
+3. Service mesh — mTLS, retry, circuit breaker
+"""
+
+# ── 1. Sync gRPC — internal service call ──
+import grpc
+from proto import orders_pb2, orders_pb2_grpc
+
+async def get_order_status(order_id: str) -> str:
+    """Sync call — javob kerak"""
+    async with grpc.aio.insecure_channel("orders-service:50051") as channel:
+        stub = orders_pb2_grpc.OrdersStub(channel)
+        response = await stub.GetOrder(
+            orders_pb2.GetOrderRequest(order_id=order_id),
+            timeout=2.0  # 2 sekund timeout
+        )
+        return response.status
+
+# ── 2. Circuit Breaker ──
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=30)
+async def call_payment_service(order_id: str, amount: float):
+    """5 marta fail bo'lsa — 30 sek "open" holatda"""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://payment-service/charge",
+            json={"order_id": order_id, "amount": amount},
+            timeout=5.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+# ── 3. Async via Kafka ──
+async def process_order_completed(order: Order):
+    """Order tugagach — async fan-out"""
+    # Payment service'ni async xabardor qilish
+    await kafka.send("order.completed", {
+        "order_id": str(order.id),
+        "user_id": str(order.user_id),
+        "amount": float(order.total),
+        "items": [{"product_id": str(i.product_id), "qty": i.quantity}
+                  for i in order.items]
+    })
+    # Har service o'z tezligida o'qiydi:
+    # - notification-service: email yuboradi
+    # - inventory-service: stokni kamaytiradi
+    # - analytics-service: statistika yangilaydi
+
+# ── 4. Saga — distributed transaction ──
+class OrderSaga:
+    """Kompensatsiya bilan distributed transaction"""
+    steps = []
+    compensations = []
+
+    async def execute(self, order_data):
+        try:
+            # Step 1: Payment
+            payment = await payment_service.charge(order_data)
+            self.compensations.append(
+                lambda: payment_service.refund(payment.id)
+            )
+
+            # Step 2: Inventory
+            reservation = await inventory_service.reserve(order_data)
+            self.compensations.append(
+                lambda: inventory_service.release(reservation.id)
+            )
+
+            # Step 3: Order create
+            order = await order_service.create(order_data, payment.id)
+            return order
+
+        except Exception as e:
+            # Ro'y bergan qadam'gacha kompensatsiya
+            for compensate in reversed(self.compensations):
+                await compensate()
+            raise</code></pre>
+    </div>
+  </article>
+
+  <article class="topic" id="api-gateway-patterns" data-search>
+    <div class="topic-header">
+      <span class="topic-id">21.2</span>
+      <h3>api gateway, service mesh, observability</h3>
+    </div>
+    <div class="question">Microservices infratuzilmasi qanday boshqariladi — service discovery, tracing, health?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Microservices "vertikal" muammolari</div>
+      <p>Har service uchun alohida: auth middleware, rate limiting, logging, retry logic, TLS — bu <strong>cross-cutting concerns</strong>. Har service'da takrorlash — nightmare. Yechim: <strong>API Gateway</strong> (tashqi traffic) va <strong>Service Mesh</strong> (ichki traffic). Gateway: bitta kirish nuqtasi — routing, auth, rate limit. Service Mesh (Istio, Linkerd): sidecar proxy pattern — har pod'ga proxy, service'lar o'rtasidagi traffic nazorat ostida.</p>
+    </div>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace">
+      <defs>
+        <marker id="arr-gw" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
+      </defs>
+
+      <!-- Internet -->
+      <rect x="10" y="110" width="80" height="50" rx="2" fill="#050908" stroke="#6a8a6a" stroke-width="1"/>
+      <text x="50" y="132" fill="#6a8a6a" font-size="10" text-anchor="middle">Internet</text>
+      <text x="50" y="148" fill="#6a8a6a" font-size="9" text-anchor="middle">Client</text>
+
+      <!-- API Gateway -->
+      <rect x="120" y="90" width="130" height="90" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="2"/>
+      <text x="185" y="112" fill="#ffb800" font-size="11" text-anchor="middle" font-weight="700">API GATEWAY</text>
+      <text x="185" y="128" fill="#6a8a6a" font-size="8" text-anchor="middle">Kong / AWS ALB</text>
+      <text x="185" y="143" fill="#6a8a6a" font-size="8" text-anchor="middle">• Auth (JWT verify)</text>
+      <text x="185" y="155" fill="#6a8a6a" font-size="8" text-anchor="middle">• Rate limiting</text>
+      <text x="185" y="167" fill="#6a8a6a" font-size="8" text-anchor="middle">• SSL termination</text>
+
+      <!-- Services with sidecars -->
+      <rect x="300" y="40" width="90" height="50" rx="2" fill="#061a0e" stroke="#00ff88" stroke-width="1.5"/>
+      <text x="345" y="62" fill="#00ff88" font-size="9" text-anchor="middle" font-weight="700">Auth Svc</text>
+      <rect x="395" y="40" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
+      <text x="412" y="60" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
+      <text x="412" y="72" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
+
+      <rect x="300" y="115" width="90" height="50" rx="2" fill="#050d14" stroke="#00eaff" stroke-width="1.5"/>
+      <text x="345" y="137" fill="#00eaff" font-size="9" text-anchor="middle" font-weight="700">Orders Svc</text>
+      <rect x="395" y="115" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
+      <text x="412" y="135" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
+      <text x="412" y="147" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
+
+      <rect x="300" y="190" width="90" height="50" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1.5"/>
+      <text x="345" y="212" fill="#ff00aa" font-size="9" text-anchor="middle" font-weight="700">ML Svc</text>
+      <rect x="395" y="190" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
+      <text x="412" y="210" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
+      <text x="412" y="222" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
+
+      <!-- Observability stack -->
+      <rect x="470" y="60" width="230" height="175" rx="2" fill="#050908" stroke="#113322" stroke-width="1.5"/>
+      <text x="585" y="82" fill="#ffb800" font-size="10" text-anchor="middle" font-weight="700">Observability Stack</text>
+      <text x="585" y="100" fill="#00ff88" font-size="9" text-anchor="middle">Jaeger / Tempo — Distributed Tracing</text>
+      <text x="585" y="118" fill="#6a8a6a" font-size="8" text-anchor="middle">Har request → span tree → bottleneck topish</text>
+      <text x="585" y="142" fill="#00eaff" font-size="9" text-anchor="middle">Prometheus — Metrics</text>
+      <text x="585" y="158" fill="#6a8a6a" font-size="8" text-anchor="middle">Service error rate, latency, requests/sec</text>
+      <text x="585" y="180" fill="#b87eff" font-size="9" text-anchor="middle">Loki / ELK — Logs</text>
+      <text x="585" y="196" fill="#6a8a6a" font-size="8" text-anchor="middle">Structured JSON logs, correlation ID</text>
+      <text x="585" y="218" fill="#ff00aa" font-size="9" text-anchor="middle">Grafana — Dashboards + Alerts</text>
+
+      <!-- Arrows -->
+      <line x1="90" y1="135" x2="120" y2="135" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
+      <line x1="250" y1="110" x2="300" y2="65" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
+      <line x1="250" y1="135" x2="300" y2="140" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
+      <line x1="250" y1="160" x2="300" y2="215" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
+      <line x1="430" y1="65" x2="470" y2="140" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
+      <line x1="430" y1="140" x2="470" y2="148" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
+      <line x1="430" y1="215" x2="470" y2="160" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
+    </svg>
+    </div>
+
+    <h4>Distributed tracing — request path kuzatish</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>tracing_setup.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+def setup_tracing(app: FastAPI, service_name: str):
+    """OpenTelemetry — auto-instrumentation + manual spans"""
+
+    # Exporter — Jaeger yoki Tempo'ga yuborish
+    exporter = OTLPSpanExporter(endpoint="http://jaeger:4317")
+    provider = TracerProvider()
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+
+    # Auto-instrumentation — FastAPI, asyncpg, httpx
+    FastAPIInstrumentor.instrument_app(app)
+    AsyncPGInstrumentor().instrument()
+    HTTPXClientInstrumentor().instrument()
+
+# ── Manual span — muhim funksiya uchun ──
+tracer = trace.get_tracer(__name__)
+
+async def process_order(order_id: str):
+    with tracer.start_as_current_span("process_order") as span:
+        span.set_attribute("order.id", order_id)
+
+        # DB span avtomatik qo'shiladi (asyncpg instrumentation)
+        order = await db.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
+
+        with tracer.start_as_current_span("validate_inventory"):
+            is_available = await check_inventory(order["product_id"])
+            span.set_attribute("inventory.available", is_available)
+
+        if not is_available:
+            span.set_attribute("order.cancelled", True)
+            span.set_status(trace.Status(trace.StatusCode.ERROR))
+            raise OutOfStockError(order["product_id"])
+
+        return order
+
+# Jaeger'da ko'rish:
+# /api/v1/orders/create → [5ms]
+#   → Auth middleware [1ms]
+#   → process_order [12ms]
+#     → DB query [4ms]
+#     → validate_inventory [6ms]
+#       → inventory-service HTTP call [5ms]</code></pre>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">ⓘ</span>
+      <div class="callout-content">
+        <div class="callout-title">Microservices anti-patterns — qochish kerak</div>
+        <p><strong>Distributed monolith:</strong> service'lar alohida deploy qilinadi, lekin bir-biriga sinxron bog'liq. Bitta tushsa — hamma tushadi. <strong>Shared database:</strong> bir nechta service bitta DB'ga yozsa — o'zaro to'sib qo'yadi, migrate qilish imkonsiz. <strong>Nano-services:</strong> har funksiya alohida service — network overhead gigantik. <strong>Versioning yo'q:</strong> service API'sini versiyalamay o'zgartirish — consumer'lar sinadi.</p>
+      </div>
+    </div>
+  </article>
+</section>
+<!-- PART VIII: SENIOR ENGINEERING DEEP-DIVES              -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="part-divider" data-search>
+  <div class="part-divider-roman">Part VIII</div>
   <h2 class="part-divider-title">senior engineering <span class="accent">deep-dives</span></h2>
   <p class="part-divider-desc">Senior darajasini junior'dan ajratib turadigan mavzular — depth, numbers, failure modes. Bu bo'limda production'da aslida nima sinadi, qanday debug qilinadi va trade-off'lar qanday o'lchanadi — real raqamlar bilan.</p>
 </div>
@@ -10376,803 +11173,6 @@ proxy.destroy()
 </section>
 
 <!-- ══════════════════════════════════════════════════════ -->
-<!-- PART VIII: SOFTWARE ARCHITECTURE PATTERNS             -->
-<!-- ══════════════════════════════════════════════════════ -->
-<div class="part-divider" data-search>
-  <div class="part-divider-roman">Part VIII</div>
-  <h2 class="part-divider-title">software architecture <span class="accent">patterns</span></h2>
-  <p class="part-divider-desc">Design patterns, microservices, trade-off'lar va muhandislik tamoyillari. Kod yozish — muhandislikning kichik bir qismi. Katta tizimlarni loyihalash, refactor qilish, jamoa bilan ishlash — bular professional muhandisning asosiy mahorati.</p>
-</div>
-
-<!-- ════════════ SECTION 20: DESIGN PATTERNS ════════════ -->
-<section class="section" id="part-20" data-search>
-  <div class="section-marker">
-    <div class="section-marker-row">
-      <span class="section-num">20</span>
-      <h2 class="section-title">design patterns — production'da ishlatiluvchi</h2>
-    </div>
-  </div>
-
-  <article class="topic" id="creational-patterns" data-search>
-    <div class="topic-header">
-      <span class="topic-id">20.1</span>
-      <h3>creational patterns — ob'ekt yaratish</h3>
-    </div>
-    <div class="question">Singleton, Factory, Builder — qachon va qanday ishlatiladi?</div>
-    <div class="answer-label">javob</div>
-
-    <div class="intuition">
-      <div class="label">Design pattern nima va nima uchun kerak?</div>
-      <p>Design pattern — takror uchraidigan muammolarga isbotlangan yechimlar. Ixtiro qilish shart emas — 1994-yilda "Gang of Four" 23 ta klassik pattern'ni hujjatlashtirishdi. Bularni bilish: boshqalar yozgan kodni tushunish (masalan, "bu Factory pattern"), muloqotni qisqartirish ("Singleton ishlataylik" — uzun tushuntirish kerak emas), yaxshi arxitektura tanlash.</p>
-    </div>
-
-    <h4>Singleton — bitta nusxa</h4>
-
-    <div class="intuition">
-      <div class="label">Singleton qachon kerak?</div>
-      <p>Tizimda faqat bitta nusxa bo'lishi kerak bo'lgan narsalar: DB connection pool, konfigurasiya, logging instance. Python'da oddiy — module-level variable avtomatik singleton. Thread-safe singleton uchun esa ehtiyotkorlik kerak.</p>
-    </div>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/singleton.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from functools import lru_cache
-from threading import Lock
-
-# ── Python'da eng sodda Singleton — module import ──
-# config.py
-class _Config:
-    def __init__(self):
-        self.db_url = "postgres://..."
-        self.debug = False
-
-_instance = _Config()  # Module import'da bir marta yaratiladi
-
-def get_config() -> _Config:
-    return _instance  # Har doim bir xil obyekt
-
-# ── Thread-safe Singleton (generic) ──
-class Singleton:
-    _instance = None
-    _lock: Lock = Lock()
-
-    def __new__(cls):
-        with cls._lock:
-            if not cls._instance:
-                cls._instance = super().__new__(cls)
-        return cls._instance
-
-# ── FastAPI'da: lru_cache bilan ──
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    db_url: str
-    api_key: str
-
-@lru_cache          # Bir marta ishlaydi, natijani cache'laydi = Singleton
-def get_settings() -> Settings:
-    return Settings()
-
-# ── Singleton anti-pattern: global state testing'ni qiyinlashtiradi ──
-# Testing uchun yaxshiroq: Dependency Injection
-# class MyService:
-#     def __init__(self, config: Config):  # inject
-#         self.config = config</code></pre>
-    </div>
-
-    <h4>Factory Pattern — ob'ekt yaratishni markazlashtirish</h4>
-
-    <div class="intuition">
-      <div class="label">Factory qachon kerak?</div>
-      <p>"Qaysi konkret sinf kerak" qarorini foydalanuvchidan yashirish. Masalan: payment provider tanlash — Stripe, Payme, Click — har biri alohida implementatsiya, lekin bir xil interfeys. Client faqat <code>PaymentFactory.create("payme")</code> deydi, ichida qaysi sinfni ishlatishni Factory hal qiladi.</p>
-    </div>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/factory.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from abc import ABC, abstractmethod
-
-# ── Abstract Interface ──
-class PaymentProvider(ABC):
-    @abstractmethod
-    async def charge(self, amount: float, currency: str, card_token: str) -> dict:
-        ...
-
-    @abstractmethod
-    async def refund(self, payment_id: str, amount: float) -> dict:
-        ...
-
-# ── Concrete implementations ──
-class StripeProvider(PaymentProvider):
-    def __init__(self, api_key: str):
-        self.stripe = Stripe(api_key)
-
-    async def charge(self, amount, currency, card_token):
-        return await self.stripe.payment_intents.create(
-            amount=int(amount * 100),
-            currency=currency,
-            payment_method=card_token,
-        )
-
-    async def refund(self, payment_id, amount):
-        return await self.stripe.refunds.create(payment_intent=payment_id)
-
-class PaymeProvider(PaymentProvider):
-    async def charge(self, amount, currency, card_token):
-        # Payme API logikasi
-        ...
-
-    async def refund(self, payment_id, amount):
-        ...
-
-# ── Factory ──
-class PaymentFactory:
-    _providers: dict[str, type[PaymentProvider]] = {
-        "stripe": StripeProvider,
-        "payme": PaymeProvider,
-    }
-
-    @classmethod
-    def create(cls, provider_name: str, **kwargs) -> PaymentProvider:
-        if provider_name not in cls._providers:
-            raise ValueError(f"Unknown provider: {provider_name}. "
-                           f"Available: {list(cls._providers)}")
-        return cls._providers[provider_name](**kwargs)
-
-    @classmethod
-    def register(cls, name: str, provider_class: type[PaymentProvider]):
-        """Yangi provider qo'shish (Open/Closed principle)"""
-        cls._providers[name] = provider_class
-
-# ── Ishlatish ──
-provider = PaymentFactory.create("stripe", api_key=settings.STRIPE_KEY)
-result = await provider.charge(99.99, "USD", card_token)
-
-# ── Konfiguratsiyadan ──
-provider_name = settings.PAYMENT_PROVIDER  # "stripe" yoki "payme"
-provider = PaymentFactory.create(provider_name, **settings.payment_config)</code></pre>
-    </div>
-
-    <h4>Builder Pattern — murakkab ob'ektlar</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/builder.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from dataclasses import dataclass, field
-from typing import Self
-
-# ── SQL Query Builder ──
-class QueryBuilder:
-    """Method chaining bilan SQL query yaratish"""
-
-    def __init__(self, table: str):
-        self._table = table
-        self._conditions: list[str] = []
-        self._columns: list[str] = ["*"]
-        self._limit: int | None = None
-        self._offset: int = 0
-        self._order: str | None = None
-        self._params: list = []
-
-    def select(self, *columns: str) -> Self:
-        self._columns = list(columns)
-        return self
-
-    def where(self, condition: str, *values) -> Self:
-        param_start = len(self._params) + 1
-        self._conditions.append(
-            condition.replace("?", f"${param_start}")
-        )
-        self._params.extend(values)
-        return self
-
-    def limit(self, n: int) -> Self:
-        self._limit = n
-        return self
-
-    def offset(self, n: int) -> Self:
-        self._offset = n
-        return self
-
-    def order_by(self, column: str, direction: str = "ASC") -> Self:
-        self._order = f"{column} {direction}"
-        return self
-
-    def build(self) -> tuple[str, list]:
-        cols = ", ".join(self._columns)
-        sql = f"SELECT {cols} FROM {self._table}"
-        if self._conditions:
-            sql += " WHERE " + " AND ".join(self._conditions)
-        if self._order:
-            sql += f" ORDER BY {self._order}"
-        if self._limit:
-            sql += f" LIMIT {self._limit}"
-        if self._offset:
-            sql += f" OFFSET {self._offset}"
-        return sql, self._params
-
-# ── Ishlatish ──
-query, params = (
-    QueryBuilder("orders")
-    .select("id", "status", "total")
-    .where("tenant_id = ?", tenant_id)
-    .where("status = ?", "active")
-    .order_by("created_at", "DESC")
-    .limit(20)
-    .offset(40)
-    .build()
-)
-# SELECT id, status, total FROM orders
-# WHERE tenant_id = $1 AND status = $2
-# ORDER BY created_at DESC LIMIT 20 OFFSET 40</code></pre>
-    </div>
-  </article>
-
-  <article class="topic" id="structural-behavioral-patterns" data-search>
-    <div class="topic-header">
-      <span class="topic-id">20.2</span>
-      <h3>structural & behavioral patterns — zamonaviy</h3>
-    </div>
-    <div class="question">Repository, Strategy, Observer, Decorator — backend'da qanday qo'llanadi?</div>
-    <div class="answer-label">javob</div>
-
-    <h4>Repository Pattern — DB logikasini ajratish</h4>
-
-    <div class="intuition">
-      <div class="label">Repository nima uchun muhim?</div>
-      <p>Service layer to'g'ridan-to'g'ri DB bilan gapirsa — test yozish qiyin (real DB kerak), DB o'zgarsa (PostgreSQL → MongoDB) — butun service qayta yoziladi. Repository — ma'lumotlar bilan ishlash logikasini alohida qatlam. Service faqat <em>nima</em> istashini aytadi, Repository <em>qanday</em> olishni biladi.</p>
-    </div>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/repository.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from abc import ABC, abstractmethod
-
-# ── Abstract interface ──
-class OrderRepository(ABC):
-    @abstractmethod
-    async def get_by_id(self, order_id: str) -> Order | None: ...
-    @abstractmethod
-    async def get_by_tenant(self, tenant_id: str, limit: int, offset: int) -> list[Order]: ...
-    @abstractmethod
-    async def create(self, data: OrderCreate, user_id: str) -> Order: ...
-    @abstractmethod
-    async def update_status(self, order_id: str, status: str) -> Order: ...
-
-# ── PostgreSQL implementatsiyasi ──
-class PostgresOrderRepository(OrderRepository):
-    def __init__(self, db):
-        self.db = db
-
-    async def get_by_id(self, order_id: str) -> Order | None:
-        row = await self.db.fetchrow(
-            "SELECT * FROM orders WHERE id = $1", order_id
-        )
-        return Order(**dict(row)) if row else None
-
-    async def get_by_tenant(self, tenant_id, limit, offset) -> list[Order]:
-        rows = await self.db.fetch(
-            """SELECT * FROM orders WHERE tenant_id = $1
-               ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
-            tenant_id, limit, offset
-        )
-        return [Order(**dict(r)) for r in rows]
-
-    async def create(self, data: OrderCreate, user_id: str) -> Order:
-        row = await self.db.fetchrow(
-            """INSERT INTO orders (id, user_id, product_id, quantity, status)
-               VALUES (gen_random_uuid(), $1, $2, $3, 'pending')
-               RETURNING *""",
-            user_id, data.product_id, data.quantity
-        )
-        return Order(**dict(row))
-
-    async def update_status(self, order_id: str, status: str) -> Order:
-        row = await self.db.fetchrow(
-            "UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
-            status, order_id
-        )
-        return Order(**dict(row))
-
-# ── In-memory implementatsiyasi (testing uchun!) ──
-class InMemoryOrderRepository(OrderRepository):
-    def __init__(self):
-        self._store: dict[str, Order] = {}
-
-    async def get_by_id(self, order_id: str) -> Order | None:
-        return self._store.get(order_id)
-
-    async def create(self, data: OrderCreate, user_id: str) -> Order:
-        order = Order(id=str(uuid.uuid4()), user_id=user_id, **data.dict())
-        self._store[order.id] = order
-        return order
-
-# ── Service — Repository inject qilinadi ──
-class OrderService:
-    def __init__(self, repo: OrderRepository):  # Abstract type!
-        self.repo = repo
-
-    async def create_order(self, data: OrderCreate, user: User) -> Order:
-        # Biznes logikasi faqat shu yerda
-        if data.quantity > 100:
-            raise ValueError("Maximum 100 ta buyurtma")
-        order = await self.repo.create(data, user.id)
-        await self.notify_warehouse(order)
-        return order
-
-# Dependency injection:
-# Production: OrderService(PostgresOrderRepository(db))
-# Test:       OrderService(InMemoryOrderRepository())</code></pre>
-    </div>
-
-    <h4>Strategy Pattern — algoritm almashtirish</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/strategy.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from abc import ABC, abstractmethod
-
-# ── Notification strategy ──
-class NotificationStrategy(ABC):
-    @abstractmethod
-    async def send(self, user: User, message: str) -> bool: ...
-
-class EmailStrategy(NotificationStrategy):
-    async def send(self, user, message):
-        await sendgrid.send(to=user.email, body=message)
-        return True
-
-class SMSStrategy(NotificationStrategy):
-    async def send(self, user, message):
-        await twilio.send(to=user.phone, body=message[:160])
-        return True
-
-class PushStrategy(NotificationStrategy):
-    async def send(self, user, message):
-        await fcm.send(token=user.device_token, body=message)
-        return True
-
-class MultiStrategy(NotificationStrategy):
-    """Bir nechta kanal — fallback bilan"""
-    def __init__(self, strategies: list[NotificationStrategy]):
-        self.strategies = strategies
-
-    async def send(self, user, message):
-        for strategy in self.strategies:
-            try:
-                success = await strategy.send(user, message)
-                if success:
-                    return True
-            except Exception:
-                continue  # Keyingi kanalga o'tish
-        return False
-
-# ── Notification service — strategy inject ──
-class NotificationService:
-    def __init__(self, strategy: NotificationStrategy):
-        self.strategy = strategy
-
-    async def notify(self, user: User, message: str):
-        return await self.strategy.send(user, message)
-
-    def set_strategy(self, strategy: NotificationStrategy):
-        self.strategy = strategy  # Runtime'da almashtirish
-
-# ── Konfiguratsiyadan strategy tanlash ──
-STRATEGIES = {
-    "email": EmailStrategy(),
-    "sms": SMSStrategy(),
-    "push": PushStrategy(),
-    "multi": MultiStrategy([PushStrategy(), EmailStrategy()]),
-}
-
-notifier = NotificationService(STRATEGIES[settings.NOTIFICATION_CHANNEL])</code></pre>
-    </div>
-
-    <h4>Observer Pattern — event system</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>patterns/observer.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">import asyncio
-from collections import defaultdict
-
-# ── Simple async event bus ──
-class EventBus:
-    _instance = None
-    _handlers: dict[str, list] = defaultdict(list)
-
-    @classmethod
-    def subscribe(cls, event: str, handler):
-        """Event'ga handler qo'shish"""
-        cls._handlers[event].append(handler)
-
-    @classmethod
-    async def publish(cls, event: str, data: dict):
-        """Event chiqarish — barcha handler'larni chaqirish"""
-        handlers = cls._handlers.get(event, [])
-        if not handlers:
-            return
-        # Barcha handler'lar parallel ishlaydi
-        await asyncio.gather(
-            *[handler(data) for handler in handlers],
-            return_exceptions=True  # Bir handler xatosi boshqasini to'xtatmasin
-        )
-
-# ── Handler'lar ──
-async def send_order_confirmation(data: dict):
-    await email_service.send(
-        to=data["email"],
-        subject=f"Order #{data['order_id']} confirmed",
-        template="order_confirmation"
-    )
-
-async def update_inventory(data: dict):
-    await inventory_service.decrease(
-        product_id=data["product_id"],
-        quantity=data["quantity"]
-    )
-
-async def notify_warehouse(data: dict):
-    await warehouse_api.post("/new-order", json=data)
-
-# ── Subscribe ──
-EventBus.subscribe("order.created", send_order_confirmation)
-EventBus.subscribe("order.created", update_inventory)
-EventBus.subscribe("order.created", notify_warehouse)
-
-# ── Publish ──
-@router.post("/orders")
-async def create_order(data: OrderCreate, user: User = Depends(get_current_user)):
-    order = await order_service.create(data, user)
-
-    # Event chiqarish — handler'lar parallel ishlaydi
-    await EventBus.publish("order.created", {
-        "order_id": str(order.id),
-        "email": user.email,
-        "product_id": str(data.product_id),
-        "quantity": data.quantity,
-    })
-
-    return order</code></pre>
-    </div>
-  </article>
-</section>
-
-<!-- ════════════ SECTION 21: MICROSERVICES ════════════ -->
-<section class="section" id="part-21" data-search>
-  <div class="section-marker">
-    <div class="section-marker-row">
-      <span class="section-num">21</span>
-      <h2 class="section-title">microservices — arxitektura va patterns</h2>
-    </div>
-  </div>
-
-  <article class="topic" id="microservices-design" data-search>
-    <div class="topic-header">
-      <span class="topic-id">21.1</span>
-      <h3>microservices — qachon va qanday bo'linadi?</h3>
-    </div>
-    <div class="question">Monolith qachon microservices'ga aylantiriladi va qanday bo'linadi?</div>
-    <div class="answer-label">javob</div>
-
-    <div class="intuition">
-      <div class="label">Eng ko'p qilinadigan xato — erta microservices</div>
-      <p>Deyarli hamma startup microservices bilan boshlaydi — bu xato. Microservices tarqatilgan tizim murakkabliklarini olib keladi: service discovery, network latency, distributed tracing, data consistency. 10 ta developer'gacha bo'lgan jamoa uchun yaxshi arxitekturalangan monolith ko'pincha yaxshiroq. <strong>Amazon'ning o'zi ham 2002-yilda monolith'da boshlagan</strong>, keyinroq bo'lingan.</p>
-      <p><strong>Qachon bo'lish kerak:</strong> jamoa 50+ bo'lganda (Conway's Law), bir qism alohida scale qilish kerak bo'lganda (masalan, ML inference 100x ko'proq resurs kerak), deploy tezligini oshirish uchun (independent deployment), texnologiya farqi kerak bo'lganda (Go service + Python ML).</p>
-    </div>
-
-    <div class="svg-diagram">
-    <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace">
-      <defs>
-        <marker id="arr-ms" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
-        <marker id="arr-ms-r" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#ff00aa"/></marker>
-      </defs>
-
-      <!-- LEFT: Monolith -->
-      <text x="115" y="20" fill="#ffb800" font-size="12" text-anchor="middle" font-weight="700">MONOLITH</text>
-      <rect x="30" y="30" width="170" height="240" rx="2" fill="#050908" stroke="#ffb800" stroke-width="2"/>
-      <rect x="45" y="50" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
-      <text x="115" y="73" fill="#ffb800" font-size="10" text-anchor="middle">Auth Module</text>
-      <rect x="45" y="95" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
-      <text x="115" y="118" fill="#ffb800" font-size="10" text-anchor="middle">Orders Module</text>
-      <rect x="45" y="140" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
-      <text x="115" y="163" fill="#ffb800" font-size="10" text-anchor="middle">Products Module</text>
-      <rect x="45" y="185" width="140" height="35" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1"/>
-      <text x="115" y="208" fill="#ffb800" font-size="10" text-anchor="middle">Notifications</text>
-      <rect x="45" y="230" width="140" height="30" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1"/>
-      <text x="115" y="250" fill="#ff00aa" font-size="9" text-anchor="middle">1 PostgreSQL (shared)</text>
-      <text x="115" y="295" fill="#6a8a6a" font-size="9" text-anchor="middle">+ Sodda debug</text>
-      <text x="115" y="310" fill="#6a8a6a" font-size="9" text-anchor="middle">+ Tez iterate</text>
-      <text x="115" y="325" fill="#ff4444" font-size="9" text-anchor="middle">- Deploy bog'liq</text>
-
-      <!-- Arrow -->
-      <text x="245" y="145" fill="#00ff88" font-size="20" text-anchor="middle">→</text>
-      <text x="245" y="162" fill="#6a8a6a" font-size="9" text-anchor="middle">evolve</text>
-
-      <!-- RIGHT: Microservices -->
-      <text x="520" y="20" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">MICROSERVICES</text>
-
-      <!-- API Gateway -->
-      <rect x="440" y="30" width="160" height="35" rx="2" fill="#0a1400" stroke="#00ff88" stroke-width="2"/>
-      <text x="520" y="53" fill="#00ff88" font-size="10" text-anchor="middle" font-weight="700">API Gateway</text>
-
-      <!-- Services -->
-      <rect x="280" y="100" width="110" height="45" rx="2" fill="#061a0e" stroke="#00ff88" stroke-width="1.5"/>
-      <text x="335" y="120" fill="#00ff88" font-size="10" text-anchor="middle" font-weight="700">Auth Service</text>
-      <text x="335" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Go + Redis</text>
-
-      <rect x="410" y="100" width="110" height="45" rx="2" fill="#050d14" stroke="#00eaff" stroke-width="1.5"/>
-      <text x="465" y="120" fill="#00eaff" font-size="10" text-anchor="middle" font-weight="700">Orders Service</text>
-      <text x="465" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Python + PG</text>
-
-      <rect x="540" y="100" width="110" height="45" rx="2" fill="#0f0a1a" stroke="#b87eff" stroke-width="1.5"/>
-      <text x="595" y="120" fill="#b87eff" font-size="10" text-anchor="middle" font-weight="700">ML Service</text>
-      <text x="595" y="135" fill="#6a8a6a" font-size="8" text-anchor="middle">Python + GPU</text>
-
-      <rect x="340" y="185" width="110" height="45" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="1.5"/>
-      <text x="395" y="205" fill="#ffb800" font-size="10" text-anchor="middle" font-weight="700">Notify Service</text>
-      <text x="395" y="220" fill="#6a8a6a" font-size="8" text-anchor="middle">Node + Kafka</text>
-
-      <rect x="475" y="185" width="110" height="45" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1.5"/>
-      <text x="530" y="205" fill="#ff00aa" font-size="10" text-anchor="middle" font-weight="700">Payment Service</text>
-      <text x="530" y="220" fill="#6a8a6a" font-size="8" text-anchor="middle">Java + PG</text>
-
-      <!-- Message bus -->
-      <rect x="300" y="265" width="370" height="30" rx="2" fill="#050908" stroke="#113322" stroke-width="1.5"/>
-      <text x="485" y="285" fill="#6a8a6a" font-size="9" text-anchor="middle">Kafka Event Bus — async communication</text>
-
-      <!-- Arrows -->
-      <line x1="520" y1="65" x2="335" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
-      <line x1="520" y1="65" x2="465" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
-      <line x1="520" y1="65" x2="595" y2="100" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-ms)"/>
-      <line x1="465" y1="145" x2="395" y2="185" stroke="#ffb800" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-ms)"/>
-      <line x1="465" y1="145" x2="530" y2="185" stroke="#ff00aa" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-ms-r)"/>
-      <line x1="395" y1="230" x2="395" y2="265" stroke="#6a8a6a" stroke-width="1" stroke-dasharray="4 3"/>
-      <line x1="530" y1="230" x2="530" y2="265" stroke="#6a8a6a" stroke-width="1" stroke-dasharray="4 3"/>
-    </svg>
-    </div>
-
-    <h4>Microservices decomposition — qanday bo'linadi?</h4>
-
-    <div class="intuition">
-      <div class="label">Domain-Driven Design (DDD) — to'g'ri bo'linish usuli</div>
-      <p>Texnik chiziqlar bo'yicha emas (database, UI, API) — <strong>biznes domeniga ko'ra</strong> bo'lish. <em>Bounded Context</em>: "Orders" jarayoni — buyurtma yaratish, kuzatish, bekor qilish. Bu bitta service. "Payments" — to'lov, qaytarish, cheklar. Bu alohida service. Ular bir-birini Kafka event orqali xabardor qiladi, to'g'ridan-to'g'ri DB'ga kirmaydi.</p>
-    </div>
-
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>Bo'linish tamoyili</th><th>Izoh</th><th>Misol</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Business capability</strong></td><td>Biznes funksiyasiga ko'ra</td><td>Orders, Payments, Inventory, Auth</td></tr>
-        <tr><td><strong>Domain</strong></td><td>DDD Bounded Context</td><td>Customer, Catalog, Fulfillment</td></tr>
-        <tr><td><strong>Team ownership</strong></td><td>Conway's Law — bir jamoa = bir service</td><td>Backend team → core API, ML team → inference</td></tr>
-        <tr><td><strong>Scale requirement</strong></td><td>Alohida scale kerak bo'lgan</td><td>ML inference → GPU pods, API → CPU pods</td></tr>
-        <tr><td><strong>Technology fit</strong></td><td>Har service o'z stack'ida</td><td>Go auth (tez), Python ML, Node realtime</td></tr>
-      </tbody>
-    </table>
-    </div>
-
-    <h4>Service communication patterns</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>service_communication.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">"""
-Microservices o'rtasida kommunikatsiya:
-1. Sync REST/gRPC — darhol javob kerak
-2. Async Kafka — eventual consistency OK
-3. Service mesh — mTLS, retry, circuit breaker
-"""
-
-# ── 1. Sync gRPC — internal service call ──
-import grpc
-from proto import orders_pb2, orders_pb2_grpc
-
-async def get_order_status(order_id: str) -> str:
-    """Sync call — javob kerak"""
-    async with grpc.aio.insecure_channel("orders-service:50051") as channel:
-        stub = orders_pb2_grpc.OrdersStub(channel)
-        response = await stub.GetOrder(
-            orders_pb2.GetOrderRequest(order_id=order_id),
-            timeout=2.0  # 2 sekund timeout
-        )
-        return response.status
-
-# ── 2. Circuit Breaker ──
-from circuitbreaker import circuit
-
-@circuit(failure_threshold=5, recovery_timeout=30)
-async def call_payment_service(order_id: str, amount: float):
-    """5 marta fail bo'lsa — 30 sek "open" holatda"""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "http://payment-service/charge",
-            json={"order_id": order_id, "amount": amount},
-            timeout=5.0
-        )
-        response.raise_for_status()
-        return response.json()
-
-# ── 3. Async via Kafka ──
-async def process_order_completed(order: Order):
-    """Order tugagach — async fan-out"""
-    # Payment service'ni async xabardor qilish
-    await kafka.send("order.completed", {
-        "order_id": str(order.id),
-        "user_id": str(order.user_id),
-        "amount": float(order.total),
-        "items": [{"product_id": str(i.product_id), "qty": i.quantity}
-                  for i in order.items]
-    })
-    # Har service o'z tezligida o'qiydi:
-    # - notification-service: email yuboradi
-    # - inventory-service: stokni kamaytiradi
-    # - analytics-service: statistika yangilaydi
-
-# ── 4. Saga — distributed transaction ──
-class OrderSaga:
-    """Kompensatsiya bilan distributed transaction"""
-    steps = []
-    compensations = []
-
-    async def execute(self, order_data):
-        try:
-            # Step 1: Payment
-            payment = await payment_service.charge(order_data)
-            self.compensations.append(
-                lambda: payment_service.refund(payment.id)
-            )
-
-            # Step 2: Inventory
-            reservation = await inventory_service.reserve(order_data)
-            self.compensations.append(
-                lambda: inventory_service.release(reservation.id)
-            )
-
-            # Step 3: Order create
-            order = await order_service.create(order_data, payment.id)
-            return order
-
-        except Exception as e:
-            # Ro'y bergan qadam'gacha kompensatsiya
-            for compensate in reversed(self.compensations):
-                await compensate()
-            raise</code></pre>
-    </div>
-  </article>
-
-  <article class="topic" id="api-gateway-patterns" data-search>
-    <div class="topic-header">
-      <span class="topic-id">21.2</span>
-      <h3>api gateway, service mesh, observability</h3>
-    </div>
-    <div class="question">Microservices infratuzilmasi qanday boshqariladi — service discovery, tracing, health?</div>
-    <div class="answer-label">javob</div>
-
-    <div class="intuition">
-      <div class="label">Microservices "vertikal" muammolari</div>
-      <p>Har service uchun alohida: auth middleware, rate limiting, logging, retry logic, TLS — bu <strong>cross-cutting concerns</strong>. Har service'da takrorlash — nightmare. Yechim: <strong>API Gateway</strong> (tashqi traffic) va <strong>Service Mesh</strong> (ichki traffic). Gateway: bitta kirish nuqtasi — routing, auth, rate limit. Service Mesh (Istio, Linkerd): sidecar proxy pattern — har pod'ga proxy, service'lar o'rtasidagi traffic nazorat ostida.</p>
-    </div>
-
-    <div class="svg-diagram">
-    <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace">
-      <defs>
-        <marker id="arr-gw" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
-      </defs>
-
-      <!-- Internet -->
-      <rect x="10" y="110" width="80" height="50" rx="2" fill="#050908" stroke="#6a8a6a" stroke-width="1"/>
-      <text x="50" y="132" fill="#6a8a6a" font-size="10" text-anchor="middle">Internet</text>
-      <text x="50" y="148" fill="#6a8a6a" font-size="9" text-anchor="middle">Client</text>
-
-      <!-- API Gateway -->
-      <rect x="120" y="90" width="130" height="90" rx="2" fill="#0f0a00" stroke="#ffb800" stroke-width="2"/>
-      <text x="185" y="112" fill="#ffb800" font-size="11" text-anchor="middle" font-weight="700">API GATEWAY</text>
-      <text x="185" y="128" fill="#6a8a6a" font-size="8" text-anchor="middle">Kong / AWS ALB</text>
-      <text x="185" y="143" fill="#6a8a6a" font-size="8" text-anchor="middle">• Auth (JWT verify)</text>
-      <text x="185" y="155" fill="#6a8a6a" font-size="8" text-anchor="middle">• Rate limiting</text>
-      <text x="185" y="167" fill="#6a8a6a" font-size="8" text-anchor="middle">• SSL termination</text>
-
-      <!-- Services with sidecars -->
-      <rect x="300" y="40" width="90" height="50" rx="2" fill="#061a0e" stroke="#00ff88" stroke-width="1.5"/>
-      <text x="345" y="62" fill="#00ff88" font-size="9" text-anchor="middle" font-weight="700">Auth Svc</text>
-      <rect x="395" y="40" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
-      <text x="412" y="60" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
-      <text x="412" y="72" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
-
-      <rect x="300" y="115" width="90" height="50" rx="2" fill="#050d14" stroke="#00eaff" stroke-width="1.5"/>
-      <text x="345" y="137" fill="#00eaff" font-size="9" text-anchor="middle" font-weight="700">Orders Svc</text>
-      <rect x="395" y="115" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
-      <text x="412" y="135" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
-      <text x="412" y="147" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
-
-      <rect x="300" y="190" width="90" height="50" rx="2" fill="#120510" stroke="#ff00aa" stroke-width="1.5"/>
-      <text x="345" y="212" fill="#ff00aa" font-size="9" text-anchor="middle" font-weight="700">ML Svc</text>
-      <rect x="395" y="190" width="35" height="50" rx="2" fill="#0a0a14" stroke="#b87eff" stroke-width="1"/>
-      <text x="412" y="210" fill="#b87eff" font-size="7" text-anchor="middle">side-</text>
-      <text x="412" y="222" fill="#b87eff" font-size="7" text-anchor="middle">car</text>
-
-      <!-- Observability stack -->
-      <rect x="470" y="60" width="230" height="175" rx="2" fill="#050908" stroke="#113322" stroke-width="1.5"/>
-      <text x="585" y="82" fill="#ffb800" font-size="10" text-anchor="middle" font-weight="700">Observability Stack</text>
-      <text x="585" y="100" fill="#00ff88" font-size="9" text-anchor="middle">Jaeger / Tempo — Distributed Tracing</text>
-      <text x="585" y="118" fill="#6a8a6a" font-size="8" text-anchor="middle">Har request → span tree → bottleneck topish</text>
-      <text x="585" y="142" fill="#00eaff" font-size="9" text-anchor="middle">Prometheus — Metrics</text>
-      <text x="585" y="158" fill="#6a8a6a" font-size="8" text-anchor="middle">Service error rate, latency, requests/sec</text>
-      <text x="585" y="180" fill="#b87eff" font-size="9" text-anchor="middle">Loki / ELK — Logs</text>
-      <text x="585" y="196" fill="#6a8a6a" font-size="8" text-anchor="middle">Structured JSON logs, correlation ID</text>
-      <text x="585" y="218" fill="#ff00aa" font-size="9" text-anchor="middle">Grafana — Dashboards + Alerts</text>
-
-      <!-- Arrows -->
-      <line x1="90" y1="135" x2="120" y2="135" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
-      <line x1="250" y1="110" x2="300" y2="65" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
-      <line x1="250" y1="135" x2="300" y2="140" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
-      <line x1="250" y1="160" x2="300" y2="215" stroke="#00ff88" stroke-width="1.5" marker-end="url(#arr-gw)"/>
-      <line x1="430" y1="65" x2="470" y2="140" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
-      <line x1="430" y1="140" x2="470" y2="148" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
-      <line x1="430" y1="215" x2="470" y2="160" stroke="#b87eff" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr-gw)"/>
-    </svg>
-    </div>
-
-    <h4>Distributed tracing — request path kuzatish</h4>
-
-    <div class="code-block">
-      <div class="code-header"><span>tracing_setup.py</span><button class="copy-btn">Copy</button></div>
-<pre><code class="language-python">from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-
-def setup_tracing(app: FastAPI, service_name: str):
-    """OpenTelemetry — auto-instrumentation + manual spans"""
-
-    # Exporter — Jaeger yoki Tempo'ga yuborish
-    exporter = OTLPSpanExporter(endpoint="http://jaeger:4317")
-    provider = TracerProvider()
-    provider.add_span_processor(BatchSpanProcessor(exporter))
-    trace.set_tracer_provider(provider)
-
-    # Auto-instrumentation — FastAPI, asyncpg, httpx
-    FastAPIInstrumentor.instrument_app(app)
-    AsyncPGInstrumentor().instrument()
-    HTTPXClientInstrumentor().instrument()
-
-# ── Manual span — muhim funksiya uchun ──
-tracer = trace.get_tracer(__name__)
-
-async def process_order(order_id: str):
-    with tracer.start_as_current_span("process_order") as span:
-        span.set_attribute("order.id", order_id)
-
-        # DB span avtomatik qo'shiladi (asyncpg instrumentation)
-        order = await db.fetchrow("SELECT * FROM orders WHERE id = $1", order_id)
-
-        with tracer.start_as_current_span("validate_inventory"):
-            is_available = await check_inventory(order["product_id"])
-            span.set_attribute("inventory.available", is_available)
-
-        if not is_available:
-            span.set_attribute("order.cancelled", True)
-            span.set_status(trace.Status(trace.StatusCode.ERROR))
-            raise OutOfStockError(order["product_id"])
-
-        return order
-
-# Jaeger'da ko'rish:
-# /api/v1/orders/create → [5ms]
-#   → Auth middleware [1ms]
-#   → process_order [12ms]
-#     → DB query [4ms]
-#     → validate_inventory [6ms]
-#       → inventory-service HTTP call [5ms]</code></pre>
-    </div>
-
-    <div class="callout info">
-      <span class="callout-icon">ⓘ</span>
-      <div class="callout-content">
-        <div class="callout-title">Microservices anti-patterns — qochish kerak</div>
-        <p><strong>Distributed monolith:</strong> service'lar alohida deploy qilinadi, lekin bir-biriga sinxron bog'liq. Bitta tushsa — hamma tushadi. <strong>Shared database:</strong> bir nechta service bitta DB'ga yozsa — o'zaro to'sib qo'yadi, migrate qilish imkonsiz. <strong>Nano-services:</strong> har funksiya alohida service — network overhead gigantik. <strong>Versioning yo'q:</strong> service API'sini versiyalamay o'zgartirish — consumer'lar sinadi.</p>
-      </div>
-    </div>
-  </article>
-</section>
 
 <!-- ════════════ FOOTER ════════════ -->
 <footer class="footer">
