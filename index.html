@@ -3077,7 +3077,7 @@ pgvector on existing PostgreSQL:
 
     <h4>Quantization — cost kamaytirish</h4>
 
-    <p>Vektorni float32 → int8 qilsangiz: 4x kichikroq disk, 3-4x tez, faqat &lt;1% recall loss.</p>
+    <p>Vektorni <strong>float32 → int8</strong> qilsangiz: 4x kichikroq disk, 3-4x tez qidiruv. Recall loss esa quantization turiga bog'liq: <strong>scalar quantization</strong> 2-5% recall loss (oddiy min/max normalization), <strong>product quantization (PQ)</strong> &lt;1% loss beradi (vektorni subspace'larga bo'lib, har birida centroid). Production'da: &gt;10M vektor bo'lsa PQ majburiy, kamroq bo'lsa scalar yetarli. Binary quantization (1-bit) 32x tejamkorlik berib, 5-10% loss keltiradi — filter sifatida ishlating (rerank bilan).</p>
 
     <div class="code-block">
       <div class="code-header"><span>quantization.py</span><button class="copy-btn">Copy</button></div>
@@ -5755,9 +5755,15 @@ Severity levels:
 1 Uzbek word ≈ 2.5 tokens (turk tillari tokenization'ga yomon moslashgan)
 1000 words ≈ 1300 tokens (EN) yoki ~2500 tokens (UZ)
 
-Pricing odatda 1M token uchun:
-  - Input: $3-15
-  - Output: $15-75 (ancha qimmat!)</div>
+Pricing (1M token, 2026 boshi) — har model alohida:
+  Claude Haiku 4.5:   Input $0.80   Output $4      (tez, arzon, kunlik ko'p trafik)
+  Claude Sonnet 4.6:  Input $3      Output $15     (sweet spot — 80% use case)
+  Claude Opus 4.7:    Input $15     Output $75     (eng murakkab reasoning uchun)
+  GPT-4.1:            Input $2.50   Output $10     (Claude Sonnet raqobati)
+  Gemini 2.0 Pro:     Input $1.25   Output $5      (eng arzon frontier)
+
+Output narxi Input'dan 5x qimmat — prompt'larni qisqa emas, RESPONSE'ni qisqa qilish muhim.
+Prompt caching 90%'gacha tejaydi (pastda ko'rasiz).</div>
 
     <h4>Asosiy parametrlar — API call'da</h4>
 
@@ -6459,7 +6465,7 @@ print(result)
 
     <h4>Matryoshka embeddings — adaptive trick</h4>
 
-    <p>Yangi embedding modellar <strong>dimension truncation</strong>ni qo'llab-quvvatlaydi. 3072 dim embedding'ni 256 dim ga kesasiz — aksar 90%+ sifat saqlanadi. Disk/RAM 12x tejaladi.</p>
+    <p>Yangi embedding modellar (OpenAI v3, Nomic, Jina v3) <strong>Matryoshka Representation Learning</strong>'ni qo'llab-quvvatlaydi. 3072 dim embedding'ni 256 dim ga kesasiz — task'ga qarab <strong>85-90% sifat</strong> saqlanadi (MTEB benchmark'ida test qiling). Disk/RAM 12x tejaladi, p99 qidiruv latency 3-4x tez bo'ladi. Muhim: har domain uchun truncation darajasini alohida evaluate qiling — code retrieval uchun 512 dim, chat/Q&amp;A uchun 256 dim yetarli.</p>
 
     <div class="code-block">
       <div class="code-header"><span>matryoshka.py</span><button class="copy-btn">Copy</button></div>
@@ -7239,7 +7245,7 @@ if __name__ == "__main__":
       <span class="callout-icon">✦</span>
       <div class="callout-content">
         <div class="callout-title">Nega MCP mainstream bo'ldi?</div>
-        <p>OpenAI, Google, Microsoft hammasi qabul qilishdi. MCP registry'da 500+ server mavjud. Your internal tools ham MCP server qilib yozsangiz — har AI tool'da ishlaydi. Enterprise integration standard bo'lmoqda.</p>
+        <p>OpenAI, Google, Microsoft, Anthropic hammasi qabul qilishdi. 2026 boshida MCP registry'da 150+ rasmiy server (GitHub, Slack, Linear, Sentry, Postgres, Filesystem va h.k.), yana community server'lar qo'shilib bormoqda. Your internal tools'ni MCP server qilib yozsangiz — Claude Desktop, Cursor, Zed, OpenAI Agents'da birdaniga ishlaydi. Enterprise integration standard bo'lmoqda — AI uchun REST API kabi "universal tildagi" protocol.</p>
       </div>
     </div>
   </article>
@@ -9020,6 +9026,1353 @@ async def smart_route(question: str, context: str = "") -> tuple[str, str]:
     </div>
   </article>
 
+</section>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- PART VII: SENIOR ENGINEERING DEEP-DIVES               -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="part-divider" data-search>
+  <div class="part-divider-roman">Part VII</div>
+  <h2 class="part-divider-title">senior engineering <span class="accent">deep-dives</span></h2>
+  <p class="part-divider-desc">Senior darajasini junior'dan ajratib turadigan mavzular — depth, numbers, failure modes. Bu bo'limda production'da aslida nima sinadi, qanday debug qilinadi va trade-off'lar qanday o'lchanadi — real raqamlar bilan.</p>
+</div>
+
+<!-- ════════════ SECTION 19A: ADVANCED RAG ════════════ -->
+<section class="section" id="part-19a" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">22</span>
+      <h2 class="section-title">advanced RAG — chunking, reranking, GraphRAG</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="chunking-strategies" data-search>
+    <div class="topic-header">
+      <span class="topic-id">22.1</span>
+      <h3>chunking strategies — RAG sifatining 50%'i</h3>
+    </div>
+    <div class="question">Matnni qanday bo'laklar ga bo'lish kerak? Bu savol RAG muvaffaqiyatini belgilaydi.</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Chunking — sifat oshirishning eng arzon yo'li</div>
+      <p>Noto'g'ri chunking — hech qanday reranker tuzata olmaydi. Chunk juda kichik bo'lsa — kontekst yo'qoladi ("Bu muammo" — nima muammosi?). Juda katta bo'lsa — embedding signal pasayadi (10 mavzu bitta vektorga siqiladi). Optimal: bitta chunk = bitta "atomic idea" (300-600 token).</p>
+    </div>
+
+    <h4>Chunking strategiyalari — qachon qaysini</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategiya</th><th>Qachon</th><th>Chunk size</th><th>Overlap</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Fixed-size</strong></td><td>Homogeneous docs (news, blog)</td><td>512 token</td><td>50 token</td></tr>
+        <tr><td><strong>Recursive</strong></td><td>Markdown/HTML (headers bo'ylab)</td><td>300-800 token</td><td>10-15%</td></tr>
+        <tr><td><strong>Semantic</strong></td><td>Long-form, argumentative</td><td>Variable</td><td>Sentence-based</td></tr>
+        <tr><td><strong>Structural</strong></td><td>Kod, API docs, JSON</td><td>Function/class bo'yicha</td><td>0 (syntactic boundary)</td></tr>
+        <tr><td><strong>Contextual (Anthropic 2024)</strong></td><td>Enterprise docs, law</td><td>Har chunk'ga 50-100 token context header</td><td>LLM yordamida generate</td></tr>
+        <tr><td><strong>Late chunking (Jina 2024)</strong></td><td>Long docs with references</td><td>Butun doc embed, keyin pool</td><td>N/A</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h4>Contextual Retrieval — Anthropic'ning 2024 metodini tushuning</h4>
+    <p>Standard chunk: "Tizim p99 latency 120ms." Bu chunk boshqa hujjatdan kelgan bo'lsa, "tizim" nima? Yechim: har chunk'dan oldin 50-100 token <strong>context header</strong> qo'shish. Claude'ga butun hujjatni yuborib, har chunk uchun kontekst generate qiling (prompt caching bilan arzon — 90% tejamkorlik).</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>contextual_chunking.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from anthropic import AsyncAnthropic
+
+client = AsyncAnthropic()
+
+CONTEXT_PROMPT = """&lt;document&gt;
+{doc}
+&lt;/document&gt;
+
+Bu butun hujjatdan quyidagi chunk olingan:
+&lt;chunk&gt;{chunk}&lt;/chunk&gt;
+
+50-100 tokenda chunk uchun qisqa kontekst yozing — unga nima oldin kelgani, qaysi bo'lim, qanday tizim haqida ekanligi. Faqat kontekstni qaytaring, boshqa hech narsa."""
+
+async def add_context(doc: str, chunk: str) -> str:
+    resp = await client.messages.create(
+        model="claude-haiku-4-5-20251001",  # arzon, tez
+        max_tokens=150,
+        system=[{
+            "type": "text",
+            "text": CONTEXT_PROMPT.format(doc=doc, chunk=chunk),
+            "cache_control": {"type": "ephemeral"}  # prompt caching — 90% tejamkorlik
+        }],
+        messages=[{"role": "user", "content": "Kontekst:"}]
+    )
+    return resp.content[0].text
+
+# Chunk'ga context header qo'shamiz — keyin embed qilamiz
+async def embed_chunks(doc: str, chunks: list[str]):
+    results = []
+    for c in chunks:
+        ctx = await add_context(doc, c)
+        full_text = f"{ctx}\n\n{c}"  # context + chunk birga
+        # Endi embedding — embedding model butun kontekstni ko'radi
+        results.append(full_text)
+    return results
+</code></pre>
+    </div>
+
+    <p><strong>Natija (Anthropic benchmark):</strong> retrieval accuracy 35%'dan 67%'gacha ko'tarildi, ya'ni xato topish 49% kamaydi. Prompt caching tufayli cost per doc ~$1.02/1M token.</p>
+
+    <div class="callout">
+      <span class="callout-icon">⚠</span>
+      <div>
+        <div class="callout-title">Chunking failure modlari — senior debug checklist</div>
+        <p><strong>1.</strong> Code chunks hech qachon o'rta qatordan kesilmasin — tree-sitter bilan AST-aware bo'ling.<br>
+        <strong>2.</strong> Tables: HTML/markdown jadval butun qolsin, yoki row-wise chunk — <em>hech qachon column'larni bo'lib yubormang</em>.<br>
+        <strong>3.</strong> Headers siqib tashlanmasin — "Section 3.2: Auth" chunk'ning boshida bo'lishi shart.<br>
+        <strong>4.</strong> Overlap 10-20% — kam bo'lsa context yo'qoladi, ko'p bo'lsa duplicate retrieval.<br>
+        <strong>5.</strong> Evaluate qiling: 50 real savol + ground truth chunks to'plab, hit@5 o'lchash. Model/chunking o'zgartirganda regression testi majburiy.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="hybrid-search-reranking" data-search>
+    <div class="topic-header">
+      <span class="topic-id">22.2</span>
+      <h3>hybrid search + reranking — production standard 2026</h3>
+    </div>
+    <div class="question">Faqat vector search yetarli emas. Senior production RAG qanday ishlaydi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">2-bosqichli retrieval = 2026 standard</div>
+      <p>Vector search semantik ("ma'no yaqinligi") — lekin exact terms (kod, versiya raqami, mahsulot ID) uchun zaif. BM25 (klassik keyword search) — aksincha, exact match yaxshi, semantic zaif. <strong>Hybrid search</strong>: ikkalasini parallel ishlatib, natijalarni birlashtirish. Keyin <strong>reranker</strong> (cross-encoder) top 50'ni top 5'ga qisqartiradi — aniqlik 30-50% oshadi.</p>
+    </div>
+
+    <h4>Production retrieval pipeline</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>hybrid_rag.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from qdrant_client import QdrantClient
+from rank_bm25 import BM25Okapi
+from openai import AsyncOpenAI
+import cohere
+
+qdrant = QdrantClient(url="http://localhost:6333")
+openai = AsyncOpenAI()
+co = cohere.Client()  # Reranker
+
+async def hybrid_search(query: str, k: int = 5) -> list[dict]:
+    # 1. Vector search (semantic) — top 30
+    query_emb = (await openai.embeddings.create(
+        input=query, model="text-embedding-3-small"
+    )).data[0].embedding
+
+    vec_hits = qdrant.search(
+        collection_name="docs",
+        query_vector=query_emb,
+        limit=30
+    )
+
+    # 2. BM25 search (exact keywords) — top 30 (parallel)
+    #    Real production'da: Elasticsearch/OpenSearch/Typesense ishlatiladi
+    bm25_hits = bm25_index.search(query, top_n=30)
+
+    # 3. Reciprocal Rank Fusion (RRF) — 2 listni adolatli birlashtirish
+    #    RRF: score = 1/(k + rank). k=60 — proven default
+    merged = reciprocal_rank_fusion(vec_hits, bm25_hits, k=60)
+
+    # 4. Reranking — top 30'dan top 5'ni cross-encoder bilan tanlash
+    #    Cohere Rerank: query+doc BIRGA model'ga boradi (bi-encoder emas)
+    top30_docs = [m["text"] for m in merged[:30]]
+
+    reranked = co.rerank(
+        model="rerank-v3.5",
+        query=query,
+        documents=top30_docs,
+        top_n=k
+    )
+
+    return [{"text": r.document["text"], "score": r.relevance_score}
+            for r in reranked.results]
+
+
+def reciprocal_rank_fusion(*result_lists, k: int = 60) -> list[dict]:
+    """RRF — industry standard, no score normalization kerak."""
+    scores = {}
+    for results in result_lists:
+        for rank, item in enumerate(results):
+            doc_id = item["id"]
+            scores.setdefault(doc_id, {"text": item["text"], "score": 0})
+            scores[doc_id]["score"] += 1 / (k + rank + 1)
+    return sorted(scores.values(), key=lambda x: -x["score"])
+</code></pre>
+    </div>
+
+    <h4>Reranker tanlovi — 2026 landscape</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reranker</th><th>Latency (30 docs)</th><th>Quality (MTEB)</th><th>Narx</th><th>Best for</th></tr></thead>
+      <tbody>
+        <tr><td>Cohere Rerank v3.5</td><td>~150ms</td><td>Top-tier</td><td>$2/1K queries</td><td>Multilingual, managed</td></tr>
+        <tr><td>Voyage rerank-2</td><td>~120ms</td><td>Top-tier</td><td>$0.05/1M tokens</td><td>Long-context (16k)</td></tr>
+        <tr><td>BGE-reranker-v2-m3</td><td>~80ms (GPU)</td><td>Very good</td><td>Self-host free</td><td>O'z GPU'yingiz</td></tr>
+        <tr><td>Jina rerank-v2</td><td>~100ms</td><td>Good</td><td>$0.02/1M</td><td>Multilingual open</td></tr>
+        <tr><td>ColBERT v2</td><td>~50ms</td><td>Great (late interaction)</td><td>Self-host</td><td>Katta corpus, arzon infra</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p><strong>Senior rule:</strong> ikki bosqich — over-fetch 20-30 → rerank → top 3-5 LLM'ga. Reranker sizning RAG'ning "sifat boshqaruvchisi" — uni production'da albatta ishlatish. Har hujjat ustida A/B test qiling: reranker yoqdi/o'chirildi → hallucination rate o'lchang.</p>
+
+    <h4>GraphRAG — ma'lumotlar o'zaro bog'langanda</h4>
+
+    <p><strong>Qachon kerak:</strong> Entity'lar ko'p referenslanadigan domenlar — legal contracts ("Article 3.2 references Article 7"), enterprise docs ("Team A reports to Team B"), scientific papers (citations). Klassik RAG bu bog'lanishlarni ko'rmaydi.</p>
+
+    <p><strong>Qanday ishlaydi:</strong> LLM doclardan entity'lar va munosabatlarni ajratib, knowledge graph quradi. Query kelganda — (1) vector search relevant entities topadi, (2) graph traversal ularga bog'liq boshqalarni topadi, (3) butun subgraph LLM'ga context sifatida yuboriladi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>graph_rag.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python"># Microsoft GraphRAG yoki LangChain + Neo4j bilan
+from neo4j import AsyncGraphDatabase
+from anthropic import AsyncAnthropic
+
+EXTRACT_PROMPT = """Quyidagi matndan entity va munosabatlarni JSON formatda chiqaring:
+
+{text}
+
+Format:
+{{
+  "entities": [{{"name": "...", "type": "Person|Company|Concept"}}],
+  "relations": [{{"from": "...", "to": "...", "type": "works_at|references|depends_on"}}]
+}}"""
+
+async def build_graph(documents: list[str]):
+    async with driver.session() as session:
+        for doc in documents:
+            # 1. LLM bilan entity + relation ajratish
+            resp = await claude.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2000,
+                messages=[{"role": "user",
+                          "content": EXTRACT_PROMPT.format(text=doc)}]
+            )
+            data = json.loads(resp.content[0].text)
+
+            # 2. Neo4j'ga yozish (batch uchun UNWIND'ni ishlating)
+            for e in data["entities"]:
+                await session.run(
+                    "MERGE (n:Entity {name: $name}) SET n.type = $type",
+                    name=e["name"], type=e["type"]
+                )
+            for r in data["relations"]:
+                await session.run(
+                    "MATCH (a:Entity {name: $from}), (b:Entity {name: $to}) "
+                    "MERGE (a)-[:RELATES {type: $type}]-&gt;(b)",
+                    **{"from": r["from"], "to": r["to"], "type": r["type"]}
+                )
+
+async def graph_query(query: str) -> str:
+    # 1. Query'dan kalit entity topish (NER yoki LLM)
+    entities = await extract_entities(query)
+
+    # 2. Graph'dan 2-hop traversal — bog'langan kontekst
+    async with driver.session() as s:
+        result = await s.run(
+            "MATCH (n:Entity)-[*1..2]-(m:Entity) "
+            "WHERE n.name IN $ents RETURN n, m LIMIT 30",
+            ents=entities
+        )
+        context_graph = [r async for r in result]
+
+    # 3. LLM'ga graph context'ni ham yuborish
+    context_str = format_graph(context_graph)
+    return await answer_with_context(query, context_str)
+</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">✓</span>
+      <div>
+        <div class="callout-title">Qachon GraphRAG ishlatmang</div>
+        <p>Ko'p use case'da oddiy hybrid+rerank yetarli. GraphRAG qo'shimcha infra (Neo4j/ArangoDB), graph build cost ($10-100 per 1M token LLM extraction), murakkab query pipeline. Faqat entity-heavy domen'larda (legal, science, enterprise knowledge) ROI'ga arziydi. Oddiy chat botga keragi yo'q.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 22B: LLM OBSERVABILITY ════════════ -->
+<section class="section" id="part-19b" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">23</span>
+      <h2 class="section-title">LLM observability &amp; evaluation — production AI</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="llm-evals" data-search>
+    <div class="topic-header">
+      <span class="topic-id">23.1</span>
+      <h3>LLM eval — "ishlayabdi"dan "o'lchanadigan sifat"ga</h3>
+    </div>
+    <div class="question">AI feature deploy qildingiz. 3 hafta o'tdi. Ehtimoliy hallucination rate nima? Javob bera olasizmi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Test yo'q bo'lsa — AI feature rivojlanmaydi</div>
+      <p>Klassik backend'da: unit test yoziladi → CI'da o'tkaziladi → deploy. LLM'da — output deterministic emas, "to'g'ri" javob har xil ko'rinishda bo'ladi. Yechim: <strong>eval dataset</strong> (100-500 real savol + expected answer) + <strong>LLM-as-judge</strong> (boshqa LLM javobni baholasin). Bu — AI feature'ning "regression test suite"i.</p>
+    </div>
+
+    <h4>Eval dataset qurish</h4>
+
+    <ol>
+      <li><strong>Real trafikdan boshlash.</strong> Production log'lardan 100-200 savol oling (PII redacted). Sintetik savol'lar yaxshi emas — real user'lar "noto'g'ri" yozadi.</li>
+      <li><strong>Ground truth.</strong> Har savolga kutilayotgan javob, yoki "muvaffaqiyat mezoni" (format, aniqlik, refusal kerakmi).</li>
+      <li><strong>Edge case ko'paytirish.</strong> Adversarial inputlar ("jailbreak"), ambiguous questions, tilga bog'liq farqlar, uzun kontekst.</li>
+      <li><strong>Version qilish.</strong> Git'da saqlang — production'da LLM model/prompt o'zgarsa, bu dataset'da regression topiladi.</li>
+    </ol>
+
+    <div class="code-block">
+      <div class="code-header"><span>llm_judge.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from anthropic import AsyncAnthropic
+from pydantic import BaseModel
+import asyncio, json
+
+client = AsyncAnthropic()
+
+JUDGE_PROMPT = """Siz expert evaluator'siz. Quyidagi AI javobni baholang.
+
+SAVOL: {question}
+KUTILGAN JAVOB (ground truth): {expected}
+AI JAVOBI: {actual}
+
+Quyidagi mezonlar bo'yicha 1-5 ball bering:
+1. factual_accuracy — fakt to'g'rimi?
+2. completeness — kutilgan savolni to'liq qoplaydimi?
+3. hallucination — yo'q ma'lumot qo'shganmi? (1=ha, 5=yo'q)
+4. tone — mos tonda yozilganmi?
+
+JSON qaytaring:
+{{"factual_accuracy": N, "completeness": N, "hallucination": N, "tone": N, "reasoning": "qisqa izoh"}}"""
+
+class EvalResult(BaseModel):
+    factual_accuracy: int
+    completeness: int
+    hallucination: int
+    tone: int
+    reasoning: str
+
+async def judge(question: str, expected: str, actual: str) -> EvalResult:
+    resp = await client.messages.create(
+        model="claude-sonnet-4-6",  # judge Opus'dan ham bo'lishi mumkin
+        max_tokens=500,
+        messages=[{"role": "user",
+                  "content": JUDGE_PROMPT.format(
+                      question=question, expected=expected, actual=actual)}]
+    )
+    return EvalResult(**json.loads(resp.content[0].text))
+
+
+async def run_eval_suite(dataset_path: str, system_under_test):
+    dataset = json.load(open(dataset_path))
+    results = []
+
+    # Parallel — 10 ta concurrent
+    sem = asyncio.Semaphore(10)
+    async def eval_one(item):
+        async with sem:
+            actual = await system_under_test(item["question"])
+            score = await judge(item["question"], item["expected"], actual)
+            return {"item": item, "actual": actual, "score": score}
+
+    results = await asyncio.gather(*[eval_one(x) for x in dataset])
+
+    # Aggregate — senior metric: worst-case, not average
+    avg_acc = sum(r["score"].factual_accuracy for r in results) / len(results)
+    bad = [r for r in results if r["score"].hallucination &lt;= 2]
+    print(f"Avg accuracy: {avg_acc:.2f}/5")
+    print(f"Hallucinations: {len(bad)}/{len(results)} ({len(bad)/len(results)*100:.1f}%)")
+
+    return results
+</code></pre>
+    </div>
+
+    <h4>RAGAS — RAG-specific metrics</h4>
+
+    <p>RAG system uchun oddiy accuracy yetarli emas. RAGAS (open-source) 4 ta asosiy metric beradi:</p>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Metric</th><th>Nima o'lchaydi</th><th>Formulasi (intuition)</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Faithfulness</strong></td><td>Javob context'ga asoslanganmi (yo'q narsa qo'shmadimi)</td><td>javobdagi fakt'lar / context'dagi fakt'lar</td></tr>
+        <tr><td><strong>Answer Relevancy</strong></td><td>Javob savolga mosmi</td><td>LLM javobdan savol generate qilib, original bilan similarity</td></tr>
+        <tr><td><strong>Context Precision</strong></td><td>Retrieved chunks haqiqatan kerakmi (rank)</td><td>Top-k'da ground-truth rank</td></tr>
+        <tr><td><strong>Context Recall</strong></td><td>Kerak chunks'larning nechasi topildi</td><td>ground-truth'dagi fakt / retrieved fakt</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">⚠</span>
+      <div>
+        <div class="callout-title">LLM-as-judge kamchiliklar</div>
+        <p><strong>Position bias:</strong> judge birinchi javobni yaxshiroq deb baholash tendentsiyasi — ikki javobni solishtirayotgan bo'lsangiz, tartibni random qiling.<br>
+        <strong>Self-bias:</strong> judge o'z stile'idagi javoblarga yuqori ball beradi — boshqa modeldan judge ishlating (masalan, gpt-4.1 Claude output'ni baholasin).<br>
+        <strong>Length bias:</strong> uzunroq javob ko'pincha yuqori ball oladi, sifati bo'lmasa ham — prompt'da "briefness" ni ball mezoniga kiriting.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="llm-cost-tracking" data-search>
+    <div class="topic-header">
+      <span class="topic-id">23.2</span>
+      <h3>LLM cost &amp; observability — token/user tracking</h3>
+    </div>
+    <div class="question">Qaysi user qancha token yondiradi? Qaysi prompt eng qimmat? Production'da aniq javob bera olasizmi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Token = pul. Unit economics yo'q bo'lsa — SaaS yonib ketadi</div>
+      <p>Real incident: AI chat feature 1 hafta ichida $45k oldi. Sabab — infinite loop bo'lgan agent (tool call → error → retry → tool call...). Monitoring bo'lmasa, bill keltirguncha sezmaysiz. Senior rule: <strong>har LLM call'ni trace qiling — user_id, feature, input_tokens, output_tokens, cached_tokens, cost, latency, model.</strong></p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>llm_observability.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from opentelemetry import trace
+from anthropic import AsyncAnthropic
+import time
+
+tracer = trace.get_tracer(__name__)
+client = AsyncAnthropic()
+
+# Per-model pricing ($ per 1M token) — config'da saqlang
+PRICING = {
+    "claude-opus-4-7":    {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "claude-sonnet-4-6":  {"input": 3.00,  "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00, "cache_write": 1.00, "cache_read": 0.08},
+}
+
+async def llm_call(
+    user_id: str,
+    feature: str,
+    model: str,
+    messages: list,
+    **kwargs
+):
+    with tracer.start_as_current_span("llm.call") as span:
+        span.set_attribute("llm.model", model)
+        span.set_attribute("llm.feature", feature)
+        span.set_attribute("user.id", user_id)
+
+        t0 = time.monotonic()
+        try:
+            resp = await client.messages.create(
+                model=model, messages=messages, **kwargs
+            )
+        except Exception as e:
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR))
+            # Metric — error rate per model/feature
+            metrics.increment("llm.error", tags={"model": model, "feature": feature})
+            raise
+
+        latency_ms = (time.monotonic() - t0) * 1000
+
+        # Usage extraction — barcha token turlari
+        u = resp.usage
+        p = PRICING[model]
+        cost = (
+            u.input_tokens          * p["input"]       / 1_000_000 +
+            u.output_tokens         * p["output"]      / 1_000_000 +
+            (u.cache_creation_input_tokens or 0) * p["cache_write"] / 1_000_000 +
+            (u.cache_read_input_tokens or 0)     * p["cache_read"]  / 1_000_000
+        )
+
+        # Trace — har bir field Datadog/Grafana'da filter bo'ladi
+        span.set_attributes({
+            "llm.tokens.input": u.input_tokens,
+            "llm.tokens.output": u.output_tokens,
+            "llm.tokens.cached": u.cache_read_input_tokens or 0,
+            "llm.cost_usd": cost,
+            "llm.latency_ms": latency_ms,
+            "llm.stop_reason": resp.stop_reason,
+        })
+
+        # Metrics (Prometheus/Datadog)
+        metrics.histogram("llm.latency_ms", latency_ms,
+                         tags={"model": model, "feature": feature})
+        metrics.histogram("llm.cost_usd", cost,
+                         tags={"model": model, "feature": feature, "user_id": user_id})
+        metrics.increment("llm.tokens.input", u.input_tokens,
+                         tags={"model": model, "feature": feature})
+
+        # Hard limit — agar user kunlik budget'ni o'tib ketsa, raise
+        if await daily_cost(user_id) &gt; USER_DAILY_LIMIT:
+            raise LLMBudgetExceeded(user_id)
+
+        return resp
+</code></pre>
+    </div>
+
+    <h4>Dashboard'da kuzatish kerak 8 metric</h4>
+
+    <ol>
+      <li><strong>Cost per feature / day</strong> — qaysi feature eng qimmat</li>
+      <li><strong>Cost per user (p50/p95/p99)</strong> — outlier user'lar (abuse yoki bug)</li>
+      <li><strong>Tokens per request (p50/p99)</strong> — prompt bloat indicator</li>
+      <li><strong>Cache hit rate</strong> — pastroq bo'lsa prompt caching buzilgan</li>
+      <li><strong>Latency p50/p95/p99</strong> — model/provider degradation</li>
+      <li><strong>Error rate per model</strong> — provider uptime</li>
+      <li><strong>Refusal rate</strong> — model jailbreak'ga uchradi yoki content policy o'zgarishi</li>
+      <li><strong>Hallucination rate</strong> (automatic judge bilan) — regression signal</li>
+    </ol>
+
+    <div class="callout">
+      <span class="callout-icon">✓</span>
+      <div>
+        <div class="callout-title">Prompt caching — 90% tejamkorlik</div>
+        <p>Claude va OpenAI prompt caching'ni qo'llab-quvvatlaydi. System prompt + tools + doc corpus cache qilinsa — ikkinchi chaqiruvda 90%'gacha arzon va 2x tez. Static qism'ni <code>cache_control</code> bilan belgilang, dynamic qism'ni (user input) oxirida. Hisoblanadi: 1M token cache_write $3.75, cache_read $0.30 (sonnet) — 2-chaqiruvdan boshlab tejamkor.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 24: GUARDRAILS ════════════ -->
+<section class="section" id="part-19c" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">24</span>
+      <h2 class="section-title">guardrails &amp; structured outputs — reliability</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="structured-outputs" data-search>
+    <div class="topic-header">
+      <span class="topic-id">24.1</span>
+      <h3>structured outputs — JSON schema, tool use</h3>
+    </div>
+    <div class="question">LLM javobi majburan JSON bo'lishi kerak. Qanday kafolatlash?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Ikki yo'l: constrained decoding vs post-validation</div>
+      <p><strong>Constrained decoding</strong> (OpenAI strict mode, Anthropic tool use): provider LLM'ning tokenlarini schema'ga moslashtirib generate qiladi — invalid JSON hatto chiqarib bo'lmaydi. <strong>Post-validation</strong> (Pydantic + retry): LLM yozadi, siz parse qilasiz, xato bo'lsa retry. Senior rule: constrained'ni afzal ko'ring — hamma provider qo'llab-quvvatlamasa ham, Pydantic + retry + instructor library oddiy fallback.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>structured.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from pydantic import BaseModel, Field
+import instructor
+from anthropic import Anthropic
+
+class ExtractedOrder(BaseModel):
+    """User'ning buyurtma matnidan fakt ajratish."""
+    product_name: str = Field(description="mahsulot nomi, siz bilganidek")
+    quantity: int = Field(ge=1, le=1000, description="dona")
+    color: str | None = Field(default=None, description="agar aytilgan bo'lsa")
+    urgent: bool = Field(default=False)
+
+# instructor — Pydantic + LLM birlashma, auto-retry
+client = instructor.from_anthropic(Anthropic())
+
+order = client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=500,
+    messages=[{"role": "user",
+              "content": "2 ta qizil stol, ertaga kerak"}],
+    response_model=ExtractedOrder,    # schema majburan
+    max_retries=3                      # invalid bo'lsa re-prompt
+)
+
+print(order.product_name, order.quantity, order.urgent)
+# stol, 2, True
+
+
+# Anthropic native tool use — schema'ga uzviy
+from anthropic import Anthropic
+client = Anthropic()
+
+resp = client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=500,
+    tools=[{
+        "name": "extract_order",
+        "description": "User matnidan buyurtma ajratish",
+        "input_schema": ExtractedOrder.model_json_schema()
+    }],
+    tool_choice={"type": "tool", "name": "extract_order"},  # majburan
+    messages=[{"role": "user", "content": "2 ta qizil stol, ertaga kerak"}]
+)
+
+tool_input = resp.content[0].input  # JSON guaranteed
+validated = ExtractedOrder(**tool_input)
+</code></pre>
+    </div>
+
+    <h4>Function/tool calling reliability — production checklist</h4>
+
+    <ul>
+      <li><strong>Schema sifatli yozing.</strong> <code>description</code> har field'da — LLM'ni yo'naltiradigan bu. Yomon: "name". Yaxshi: "User'ning to'liq ismi, familiyasisiz".</li>
+      <li><strong>Enum'lar.</strong> Cheklovli qiymatlar — <code>Literal["sm", "md", "lg"]</code> ishlatib, LLM xayolot qilmasin.</li>
+      <li><strong>Defaults va Optional.</strong> Nullable field'lar aniq belgilansin — aks holda LLM bo'sh string qaytaradi.</li>
+      <li><strong>Validator'lar.</strong> Pydantic <code>@field_validator</code> — business rule'lar (email format, date range). Xatolik retry'ni chaqiradi.</li>
+      <li><strong>Token overhead.</strong> Katta schema 500-2000 token eats — tool'larni lean qiling, 10+ tool bo'lsa split qiling (sub-agent pattern).</li>
+    </ul>
+  </article>
+
+  <article class="topic" id="safety-guardrails" data-search>
+    <div class="topic-header">
+      <span class="topic-id">24.2</span>
+      <h3>safety guardrails — input/output filtering</h3>
+    </div>
+    <div class="question">LLM feature ishga tushdi. User abusive input yubordi, LLM toxic javob berdi. Bu productionni qanday himoya qilasiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Ikki qatorli himoya</h4>
+
+    <p><strong>Input guardrail:</strong> user prompt'ni LLM'ga yuborishdan oldin tekshirish (prompt injection, PII, toxic). <strong>Output guardrail:</strong> LLM javobni user'ga ko'rsatishdan oldin tekshirish (hallucination, PII leak, policy violation).</p>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Nima filtrlaydi</th><th>Narx/Deploy</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Llama Guard 3 (Meta)</strong></td><td>Prompt injection, violence, sexual, hate</td><td>Self-host (8B model)</td></tr>
+        <tr><td><strong>Amazon Bedrock Guardrails</strong></td><td>Content policy, PII, topic filter</td><td>~$0.75/1K checks</td></tr>
+        <tr><td><strong>Azure AI Content Safety</strong></td><td>Category severity, jailbreak detection</td><td>$0.50/1K calls</td></tr>
+        <tr><td><strong>NeMo Guardrails (NVIDIA)</strong></td><td>Rule-based + LLM ensemble, dialog flow</td><td>Open-source</td></tr>
+        <tr><td><strong>Presidio (Microsoft)</strong></td><td>PII detection &amp; redaction</td><td>Open-source, lokal</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>guardrails.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+import re
+
+analyzer = AnalyzerEngine()
+anonymizer = AnonymizerEngine()
+
+# Layer 1: PII — hech qachon LLM'ga yubormang
+def redact_pii(text: str) -> str:
+    results = analyzer.analyze(text=text, language="en")
+    anonymized = anonymizer.anonymize(text=text, analyzer_results=results)
+    return anonymized.text  # "Ali Valiev" → "&lt;PERSON&gt;"
+
+# Layer 2: Prompt injection detection (heuristic + LLM)
+INJECTION_PATTERNS = [
+    r"ignore (all )?previous instructions",
+    r"you are now",
+    r"system prompt",
+    r"&lt;\|im_start\|&gt;",
+    r"act as (?:root|admin|developer)",
+]
+
+def detect_injection(text: str) -> bool:
+    low = text.lower()
+    return any(re.search(p, low) for p in INJECTION_PATTERNS)
+
+# Layer 3: Output topic enforcement — LLM domen'dan chiqmasin
+async def topic_check(response: str, allowed_topics: list[str]) -> bool:
+    """Classifier LLM (Haiku) bilan tekshirish — arzon."""
+    prompt = f"""Quyidagi javob ushbu mavzular doirasidami: {allowed_topics}?
+    Javob: "{response}"
+    Faqat YES yoki NO qaytaring."""
+    resp = await haiku.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=10,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return "YES" in resp.content[0].text.upper()
+
+# Pipeline
+async def safe_llm_call(user_input: str):
+    if detect_injection(user_input):
+        raise UnsafeInput("prompt injection detected")
+
+    clean_input = redact_pii(user_input)
+    response = await llm_call(clean_input)
+
+    if not await topic_check(response, ["banking", "finance"]):
+        return "Men faqat bank mavzularida yordam bera olaman."
+
+    return response
+</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">⚠</span>
+      <div>
+        <div class="callout-title">Guardrail antipattern</div>
+        <p><strong>1. Faqat regex'ga ishonmang.</strong> LLM-based detection majburiy — har safar yangi jailbreak topiladi.<br>
+        <strong>2. Latency budget.</strong> Har guardrail +100-500ms qo'shadi. 3 ta guardrail = +1s. Parallel ishlating, cheap model'lar ishlating.<br>
+        <strong>3. Refusal'larni log qiling.</strong> False positive'lar (legitimate user rejected) UX'ni buzadi — har refusal'ni monitoring'da ko'ring, haftalik review.<br>
+        <strong>4. Bypass monitoring.</strong> Jailbreak attempts — metric sifatida olib, trend ko'rib turing. Yangi attack pattern'lar yuzaga chiqadi.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 25: RESILIENCE ════════════ -->
+<section class="section" id="part-19d" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">25</span>
+      <h2 class="section-title">resilience patterns — circuit breaker, hedging, bulkhead</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="circuit-breaker" data-search>
+    <div class="topic-header">
+      <span class="topic-id">25.1</span>
+      <h3>circuit breaker — cascading failure oldini olish</h3>
+    </div>
+    <div class="question">Downstream service sekinlashdi. Sizning service'ingiz 5000 RPS bilan uni bombardmon qilib turibdi. Barcha thread poll'lar band — butun tizim yonadi. Nima qilish kerak?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Circuit breaker = elektr vyklyuchatel</div>
+      <p>Electric circuit breaker: ortiqcha tok o'tsa — uzadi, kuyishdan saqlaydi. Software circuit breaker: downstream failure rate chegara o'tsa — chaqiruvni bloklaydi, "fail fast". Bu (1) butun tizimni sekin o'ldiruvchi cascade'dan saqlaydi, (2) downstream'ga recovery vaqt beradi, (3) resource'larni (thread, connection) band qilmaydi.</p>
+    </div>
+
+    <h4>3 ta holat</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>State</th><th>Xulq</th><th>O'tish sharti</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CLOSED</strong> (normal)</td><td>Barcha call o'tadi</td><td>Failure rate &gt; 50% (rolling 20 req) → OPEN</td></tr>
+        <tr><td><strong>OPEN</strong> (circuit tripped)</td><td>Call darhol fail — downstream'ga bormaydi</td><td>30-60s kutish → HALF_OPEN</td></tr>
+        <tr><td><strong>HALF_OPEN</strong> (probe)</td><td>5-10 ta call o'tkazib ko'rish</td><td>Success → CLOSED, Failure → OPEN</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>circuit_breaker.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from enum import Enum
+from dataclasses import dataclass, field
+import time
+import asyncio
+
+class State(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+@dataclass
+class CircuitBreaker:
+    name: str
+    failure_threshold: int = 5          # 5 failure dan keyin ochish
+    success_threshold: int = 3          # half-open'da 3 success → close
+    timeout: float = 30.0                # open'da 30s kutish
+    state: State = State.CLOSED
+    failures: int = 0
+    successes: int = 0
+    opened_at: float = 0
+
+    async def call(self, coro_fn, *args, **kwargs):
+        if self.state == State.OPEN:
+            if time.monotonic() - self.opened_at &gt; self.timeout:
+                self.state = State.HALF_OPEN
+                self.successes = 0
+            else:
+                raise CircuitOpen(f"{self.name} open")
+
+        try:
+            result = await coro_fn(*args, **kwargs)
+        except Exception:
+            self._on_failure()
+            raise
+        else:
+            self._on_success()
+            return result
+
+    def _on_success(self):
+        if self.state == State.HALF_OPEN:
+            self.successes += 1
+            if self.successes &gt;= self.success_threshold:
+                self.state = State.CLOSED
+                self.failures = 0
+        elif self.state == State.CLOSED:
+            self.failures = 0
+
+    def _on_failure(self):
+        self.failures += 1
+        if self.state == State.HALF_OPEN:
+            self.state = State.OPEN
+            self.opened_at = time.monotonic()
+        elif self.failures &gt;= self.failure_threshold:
+            self.state = State.OPEN
+            self.opened_at = time.monotonic()
+            # Observability — alert yuborish uchun
+            metrics.increment("circuit_breaker.opened", tags={"name": self.name})
+
+
+# Ishlatish
+breaker = CircuitBreaker(name="payment_service", failure_threshold=5, timeout=30)
+
+async def charge(amount):
+    try:
+        return await breaker.call(payment_api.charge, amount)
+    except CircuitOpen:
+        # Fallback — async queue'ga yuborib keyinroq retry
+        await queue.push({"action": "charge", "amount": amount})
+        return {"status": "queued"}
+</code></pre>
+    </div>
+
+    <h4>Production'da — o'zingiz yozmang</h4>
+    <p>Production'da <strong>resilience4j</strong> (Java), <strong>pybreaker</strong> / <strong>tenacity</strong> (Python), <strong>hystrix</strong> (legacy Netflix) yoki service mesh (Istio, Linkerd) ishlating — ular rolling window, metrics, thread isolation, bulkhead'larni qo'shib beradi. O'z implementation'ni faqat tushunish uchun yozing.</p>
+  </article>
+
+  <article class="topic" id="hedging-timeout" data-search>
+    <div class="topic-header">
+      <span class="topic-id">25.2</span>
+      <h3>timeout + hedging — tail latency'ni 10x kamaytirish</h3>
+    </div>
+    <div class="question">p99 latency 2 sekund, p50 50ms. Foydalanuvchi p99'ga tushsa loading spinner ko'radi. Qanday 50ms'ga qisqartirish?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Hedging — Google'ning "Tale of Two Responses"</div>
+      <p>Google'ning BigTable jamoasi (Dean &amp; Barroso 2013) kashf qildi: ba'zi server'lar "slow tail" bilan ishlaydi (GC pause, disk latency, noisy neighbor). Yechim — p95 vaqt o'tsa, SHU request'ni PARALLEL boshqa replikaga yuborish. Kim birinchi qaytarsa — o'sha javob. Natija: p99 2s → 80ms, faqat 5% qo'shimcha trafik.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>hedging.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import asyncio
+
+async def hedged_request(
+    fn,
+    *args,
+    hedge_delay: float = 0.095,  # p95 latency
+    max_attempts: int = 2
+):
+    """
+    Birinchi request yuboramiz. p95 (95ms) o'tsa — parallel yana bitta.
+    Kim birinchi javob bersa, o'shasi. Qolganlari cancel.
+    """
+    tasks = []
+    results = asyncio.Queue()
+
+    async def attempt(i):
+        try:
+            r = await fn(*args)
+            await results.put((i, r, None))
+        except Exception as e:
+            await results.put((i, None, e))
+
+    # 1-attempt — darhol
+    tasks.append(asyncio.create_task(attempt(0)))
+
+    # Hedge'lar
+    for i in range(1, max_attempts):
+        try:
+            i_, r, err = await asyncio.wait_for(results.get(), hedge_delay)
+            if err is None:
+                # Birinchi muvaffaqiyat — qolganini cancel
+                for t in tasks: t.cancel()
+                return r
+        except asyncio.TimeoutError:
+            # Hedge yuborish
+            tasks.append(asyncio.create_task(attempt(i)))
+
+    # Hamma attempt tugaydi, birinchi javobni olamiz
+    i_, r, err = await results.get()
+    for t in tasks: t.cancel()
+    if err: raise err
+    return r
+
+
+# Real misol: DB read replica'dan hedged read
+async def get_user(user_id: int):
+    return await hedged_request(
+        db.query,
+        "SELECT * FROM users WHERE id=$1", user_id,
+        hedge_delay=0.1  # 100ms'da hedge ishga tushadi
+    )
+</code></pre>
+    </div>
+
+    <h4>Timeout hierarchy — senior rule</h4>
+
+    <p>Har layer'da timeout kerak — lekin <strong>nested timeout</strong>lar "timeout waterfall" hosil qilishi kerak: Client timeout &lt; LB timeout &lt; App timeout &lt; DB timeout. Aks holda client allaqachon ketgan bo'lsa ham, DB query davom etaveradi (resource waste).</p>
+
+    <div class="callout">
+      <span class="callout-icon">✓</span>
+      <div>
+        <div class="callout-title">Timeout cheatsheet (production proven)</div>
+        <p><strong>Client → LB:</strong> 30s (user patience)<br>
+        <strong>LB → App:</strong> 20s (nginx proxy_read_timeout)<br>
+        <strong>App → App:</strong> 5-10s (service-to-service)<br>
+        <strong>App → DB:</strong> 2-3s (query)<br>
+        <strong>App → Redis:</strong> 100-500ms<br>
+        <strong>App → LLM API:</strong> 30-60s (streaming bo'lmasa)<br>
+        <strong>Har layer outside &gt; inside timeout.</strong> Budget-aware — har hop timeout budget'dan chiqarib yuboradi.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="bulkhead" data-search>
+    <div class="topic-header">
+      <span class="topic-id">25.3</span>
+      <h3>bulkhead — bitta muammo butun tizimni buzmasin</h3>
+    </div>
+    <div class="question">Bitta slow downstream barcha thread'ni band qildi — boshqa tezlikdagi downstream'lar ham blokirovka. Yechim?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Kemaning bulkhead'i — bir bo'lim ketsa, kema cho'kmaydi</div>
+      <p>Resource'larni (thread, connection, memory) <strong>pool'larga ajrating</strong>: har downstream service o'z pool'iga ega. Slow service'ning pool'i to'lsa — faqat uning request'lari "reject", qolgan service'lar ishlayveradi.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>bulkhead.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import asyncio
+
+class Bulkhead:
+    """Har downstream uchun alohida semaphore."""
+    def __init__(self, max_concurrent: int, queue_size: int = 10):
+        self.sem = asyncio.Semaphore(max_concurrent)
+        self.queue = asyncio.Queue(maxsize=queue_size)
+        self.name = None
+
+    async def call(self, fn, *args):
+        try:
+            # Queue to'lsa — darhol reject (fail fast)
+            self.queue.put_nowait(1)
+        except asyncio.QueueFull:
+            raise BulkheadFull(self.name)
+
+        try:
+            async with self.sem:
+                return await fn(*args)
+        finally:
+            self.queue.get_nowait()
+
+
+# Har service uchun alohida bulkhead
+payment_bh = Bulkhead(max_concurrent=20, queue_size=5)
+notify_bh  = Bulkhead(max_concurrent=50, queue_size=20)
+search_bh  = Bulkhead(max_concurrent=100, queue_size=50)
+
+# Slow payment service — faqat payment request'lar reject'lanadi
+async def process_order():
+    await payment_bh.call(payment_api.charge)    # slow, queue to'ldi
+    await notify_bh.call(notify.send)             # ishlayveradi — alohida pool
+    await search_bh.call(search.index)            # ishlayveradi
+</code></pre>
+    </div>
+
+    <p><strong>Sizing formula:</strong> <code>max_concurrent ≈ service_rps × p99_latency</code>. Agar downstream 100 RPS hazm qiladi va p99 = 200ms bo'lsa — pool 20 yetarli (100 × 0.2).</p>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 26: PERFORMANCE & TAIL LATENCY ════════════ -->
+<section class="section" id="part-19e" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">26</span>
+      <h2 class="section-title">tail latency, pool sizing, backpressure</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="tail-latency" data-search>
+    <div class="topic-header">
+      <span class="topic-id">26.1</span>
+      <h3>tail latency — nega p99.9 muhim</h3>
+    </div>
+    <div class="question">p50 = 50ms, p99 = 200ms. Dashboard'da "hammasi yaxshi". Nega user'lar "sekin" deb shikoyat qiladi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Tail latency amplification — fanout arifmetikasi</div>
+      <p>Ko'p backend: 1 user request → 10-100 downstream call (micro-svc, cache, DB). Har call p99 = 200ms bo'lsa, ulardan <strong>birortasi</strong> p99'ga tushsa — butun request p99'ga tushadi. 10 call'dan hech birining 200ms'dan oshmasligi ehtimoli: 0.99^10 = 90%. Ya'ni <strong>10% request p99'dan yomon</strong>. 100 call bo'lsa — 63% request p99'dan yomon. Shuning uchun <strong>p99.9 (va p99.99)</strong> senior metric — tail ularda yashirinadi.</p>
+    </div>
+
+    <h4>Tail latency'ni kamaytirishning 5 texnikasi</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Texnika</th><th>Qachon</th><th>Tail improvement</th></tr></thead>
+      <tbody>
+        <tr><td>Hedging (25.2)</td><td>Idempotent read'lar</td><td>p99: 2s → 80ms</td></tr>
+        <tr><td>Timeout + retry (next replica)</td><td>Random slow node</td><td>p99.9 barqarorlashadi</td></tr>
+        <tr><td>Micro-batching</td><td>Katta trafik, DB'ga</td><td>p99 yaxshiroq (batch RPC kam)</td></tr>
+        <tr><td>Request coalescing (single-flight)</td><td>Cache miss, ko'p bir xil request</td><td>Downstream stampede yo'q</td></tr>
+        <tr><td>Dedicated thread pool hot path'da</td><td>GC / noisy-neighbor</td><td>p99.9 -40%</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">⚠</span>
+      <div>
+        <div class="callout-title">p99 metric'ni kuzatish xatoligi</div>
+        <p><strong>1. Mean/median yetarli emas.</strong> p50 yaxshi bo'lsa ham p99 butkul falokat bo'lishi mumkin — Amazon: +100ms latency = -1% revenue.<br>
+        <strong>2. Averaging percentiles mumkin emas.</strong> 1-daqiqa p99 va 2-daqiqa p99 o'rtachasi = 2-daqiqa p99 EMAS. Histogram aggregation (t-digest, HdrHistogram) ishlating.<br>
+        <strong>3. Per-endpoint metric.</strong> Butun service'ning p99 — behuda. Har endpoint (URL/operation) alohida p99 kerak.<br>
+        <strong>4. User-facing vs internal.</strong> Batch job 99% p99 tolerant — live API 50ms p99 majburiy.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="pool-sizing" data-search>
+    <div class="topic-header">
+      <span class="topic-id">26.2</span>
+      <h3>connection pool sizing — matematik yondashuv</h3>
+    </div>
+    <div class="question">PostgreSQL pool_size = 5? 50? 500? Ko'pi yaxshimi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Pool kam = queue, pool ko'p = DB o'ladi</div>
+      <p>Noto'g'ri tushuncha — "ko'p connection = tez". Haqiqat: PostgreSQL har connection uchun ~10MB RAM + dedicated backend process. 500 connection = 5GB RAM + 500 process (kernel context switch cost). DB overloaded — lock contention, IOPS saturation. <strong>Senior rule: few connections + efficient use &gt;&gt; many connections</strong>.</p>
+    </div>
+
+    <h4>Little's Law — matematik asos</h4>
+
+    <p><strong>L = λW</strong> (concurrent requests = arrival rate × avg response time). Pool size'ni shunga qarab belgilang:</p>
+
+    <pre style="background: var(--bg-deep); padding: 16px; border: 1px solid var(--line-strong);">Misol: API 1000 RPS qabul qiladi, har request o'rtacha 50ms DB query bajaradi
+   → concurrent DB queries = 1000 × 0.05 = 50 at any moment
+   → pool_size ≈ 50 (90% percentile safety bilan 60-70)
+
+Qo'shimcha safety: p99 latency'ni hisobga olish
+   pool_size = RPS × p99_latency × safety_factor
+              = 1000 × 0.2 × 1.2 = 240
+
+Lekin DB 240 connection hazm qila olmasa?
+   → pgbouncer (transaction pooling) oldinga qo'yib,
+      app → pgbouncer (240) → Postgres (20-30)</pre>
+
+    <h4>PgBouncer — pool proxy</h4>
+
+    <div class="code-block">
+      <div class="code-header"><span>pgbouncer.ini</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-ini">[databases]
+app = host=db.internal port=5432 dbname=app
+
+[pgbouncer]
+listen_port = 6432
+pool_mode = transaction       ; key — transaction level pooling
+max_client_conn = 2000        ; app qancha ulanishi mumkin
+default_pool_size = 25        ; har DB uchun real Postgres connection
+reserve_pool_size = 5
+server_lifetime = 3600
+server_idle_timeout = 600
+</code></pre>
+    </div>
+
+    <p><strong>Pool mode farqi:</strong></p>
+    <ul>
+      <li><strong>session</strong> — connection per client session (default, lekin kam foyda)</li>
+      <li><strong>transaction</strong> — har transaction tugaganda connection qaytariladi (90% use case)</li>
+      <li><strong>statement</strong> — har statement, eng agressiv, lekin transaction'sizgina ishlaydi</li>
+    </ul>
+
+    <p>Transaction mode'da — 2000 app connection ⇄ 25 real DB connection. Agar har query &lt;100ms bo'lsa, 25 connection 250 queries/sec hazm qiladi — yetarli.</p>
+
+    <h4>HTTP connection pool (service-to-service)</h4>
+
+    <pre style="background: var(--bg-deep); padding: 16px; border: 1px solid var(--line-strong);"># httpx, aiohttp — connection pool parametrlar
+httpx.AsyncClient(
+    limits=httpx.Limits(
+        max_connections=100,         # total
+        max_keepalive_connections=20,
+        keepalive_expiry=30.0
+    ),
+    timeout=httpx.Timeout(
+        connect=5.0,
+        read=10.0,
+        write=5.0,
+        pool=1.0                      # queue'dan olish timeout'i!
+    )
+)</pre>
+  </article>
+
+  <article class="topic" id="backpressure" data-search>
+    <div class="topic-header">
+      <span class="topic-id">26.3</span>
+      <h3>backpressure — upstream'ni sekinlashtirish</h3>
+    </div>
+    <div class="question">Queue'ga 10K msg/s keladi, consumer 1K/s ishlay oladi. Queue cheksiz o'sa — memory tugaydi. Yechim?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Backpressure = "sekinroq yubor" signali</div>
+      <p>Yomon dizayn: buffer cheksiz — upstream bilmasdan yuborveradi — OOM. Yaxshi dizayn: downstream signalni upstream'ga yetkazadi — (1) queue bounded (reject), (2) rate limit (429), (3) flow control (TCP zero window), (4) explicit ack. Modern: <strong>Reactive Streams</strong> (Java), <strong>asyncio bounded queues</strong>, <strong>gRPC flow control</strong>.</p>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>backpressure.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import asyncio
+
+# YOMON — unbounded queue
+q = asyncio.Queue()   # maxsize=0 = cheksiz
+async def producer():
+    while True:
+        q.put_nowait(await receive())  # cheksiz o'sib boradi — OOM
+# Consumer 1K/s, producer 10K/s → queue = 9K/s o'sadi = 1 daqiqada 540K msg
+
+# YAXSHI — bounded queue, producer bloklanadi
+q = asyncio.Queue(maxsize=1000)
+async def producer():
+    while True:
+        msg = await receive()
+        await q.put(msg)   # queue to'lsa — kutadi (backpressure!)
+
+# Yoki eksplisit reject
+async def producer():
+    while True:
+        msg = await receive()
+        try:
+            q.put_nowait(msg)
+        except asyncio.QueueFull:
+            # Reject — upstream'ga 429 qaytarish
+            await send_429(msg.source)
+</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">✓</span>
+      <div>
+        <div class="callout-title">Backpressure strategies</div>
+        <p><strong>Block</strong> — producer kutadi (oddiy, ammo upstream'ni to'xtatadi).<br>
+        <strong>Drop</strong> — eski msg'lar o'chadi (metrics, log — old data'ga chidaydi).<br>
+        <strong>Reject</strong> — 429 qaytaradi (HTTP API'lar, client retry qiladi).<br>
+        <strong>Shed load</strong> — priority bo'yicha: premium user'lar o'tadi, free'lar 503.<br>
+        <strong>Adaptive concurrency</strong> (Netflix) — ML bilan optimal concurrency'ni aniqlaydi.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ════════════ SECTION 27: PRODUCTION OBSERVABILITY ════════════ -->
+<section class="section" id="part-19f" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">27</span>
+      <h2 class="section-title">production observability — eBPF, tracing, SLO</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="ebpf-observability" data-search>
+    <div class="topic-header">
+      <span class="topic-id">27.1</span>
+      <h3>eBPF — kernel'ni code bilan kuzatish</h3>
+    </div>
+    <div class="question">App bir xil infra'da, bir xil kod, ba'zan p99 200ms o'rniga 2s. Stack trace yo'q, log'lar toza. Nima qilish?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">eBPF = kernel'da sandbox'langan kod ishlatish</div>
+      <p>Muammo user space'da emas — kernel'da. TCP retransmit, disk I/O stall, context switch storm, page cache miss — app ko'rmaydi. eBPF (extended Berkeley Packet Filter) kernel event'larga hook qilib, data to'playdi — application'ga tegmaydi. 2026 standard: <strong>Pixie</strong>, <strong>Cilium</strong>, <strong>Parca</strong>, <strong>Grafana Beyla</strong> — avtomatik tracing, service map, profiling, zero kod o'zgarishi.</p>
+    </div>
+
+    <h4>eBPF qayerda yordam beradi</h4>
+
+    <ul>
+      <li><strong>Network issues:</strong> TCP retransmits, connection timeouts, DNS fails — <code>tcpretrans</code>, <code>tcplife</code> bpftrace tools.</li>
+      <li><strong>Disk latency:</strong> Per-process I/O wait, block device saturation — <code>biolatency</code>, <code>ext4slower</code>.</li>
+      <li><strong>CPU profiling:</strong> Production'da 0.1% overhead bilan flame graph — <code>Parca</code>, <code>pyroscope</code>.</li>
+      <li><strong>Auto-instrumentation:</strong> HTTP/gRPC/SQL'ni code o'zgartirmasdan trace qilish — <code>Grafana Beyla</code>.</li>
+      <li><strong>Security:</strong> Syscall monitoring, container escape detection — <code>Falco</code>.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-header"><span>ebpf_examples.sh</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-bash"># bpftrace — one-liner kernel tracing (BCC-tools)
+
+# 1. Slow disk I/O (EXT4) — qaysi file &gt; 10ms kutadi?
+sudo ext4slower 10
+
+# 2. TCP connection lifetimes — zombie connection'lar
+sudo tcplife
+
+# 3. Per-process network stats — byte level
+sudo tcptop
+
+# 4. Process nima uchun CPU eats — off-CPU profiling
+sudo offcputime -p $(pgrep myapp) 30
+
+# 5. Grafana Beyla — Go/Python/Node/Rust auto-instrument
+# zero code change, HTTP/gRPC/SQL trace
+docker run --pid=host --privileged grafana/beyla \
+  -e BEYLA_OPEN_PORT=8080 \
+  -e BEYLA_TRACE_PRINTER=text
+</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">⚠</span>
+      <div>
+        <div class="callout-title">Kernel 5.8+ kerak</div>
+        <p>eBPF programs CAP_BPF, CAP_PERFMON capabilities kerak. Managed Kubernetes (GKE, EKS) privileged sidecar yoki DaemonSet kerak. macOS'da ishlamaydi (Linux only). WSL2'da qisman ishlaydi. Production'da — Cilium (CNI), Pixie (observability), Datadog Network Perf Monitoring.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="slo-errorbudget" data-search>
+    <div class="topic-header">
+      <span class="topic-id">27.2</span>
+      <h3>SLO / SLI / error budget — reliability engineering</h3>
+    </div>
+    <div class="question">"Biz 99.9% uptime'ga intilamiz" — bu qoida qanday amaliy hal qilinadi? Deploy'ni qachon to'xtatish kerak?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">SLO — reliability'ning contractual ta'rifi</div>
+      <p><strong>SLI</strong> (Service Level Indicator) — o'lchov: "request successful if p99 &lt; 500ms AND status=2xx". <strong>SLO</strong> (Objective) — target: "99.9% requests successful". <strong>SLA</strong> — musshtariy bilan shartnoma (pul qaytarib berish). <strong>Error budget</strong> = 100% - SLO = 0.1% = har oyda 43 daqiqa "yo'qotish huquqi". Bu vaqt tugasa — feature deploy to'xtatilib, reliability ustida ishlanadi.</p>
+    </div>
+
+    <h4>Error budget policy — joylanavtomatik qaror</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Budget qolgani</th><th>Aksiya</th></tr></thead>
+      <tbody>
+        <tr><td>&gt; 50%</td><td>Normal ish, deploy tez-tez</td></tr>
+        <tr><td>25-50%</td><td>Yangi feature OK, ammo risk review kerak</td></tr>
+        <tr><td>10-25%</td><td>Faqat bug fix'lar, feature deploy to'xtatiladi</td></tr>
+        <tr><td>&lt; 10%</td><td>Stop all deploys, postmortem, reliability sprint</td></tr>
+        <tr><td>0%</td><td>Incident rejimi, customer communication</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h4>Multi-window multi-burn-rate alerting (Google SRE)</h4>
+
+    <p>Oddiy alert: "error rate &gt; 1%". Muammo: 1 soatda 1% — muhim emas, 5 daqiqada 10% — critical. Yechim: <strong>burn rate</strong> — budget'ni qanday tez yeyilmoqda.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>slo_alerts.yaml</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-yaml"># Prometheus alert rules — SRE-style SLO monitoring
+# SLO: 99.9% over 30 days = 0.1% error budget
+# Burn rate = error_rate / (1 - SLO) = error_rate / 0.001
+
+groups:
+- name: slo_burn_rate
+  rules:
+
+  # Fast burn — 1 soatda 2% budget yeyildi = 14.4x burn rate
+  # (agar shu tezlikda davom etsa, 30 kunlik budget 2 kunda tugaydi)
+  - alert: SLOBurnRateFast
+    expr: |
+      (
+        sum(rate(http_requests_total{status=~"5.."}[5m]))
+        /
+        sum(rate(http_requests_total[5m]))
+      ) &gt; 14.4 * 0.001
+      AND
+      (
+        sum(rate(http_requests_total{status=~"5.."}[1h]))
+        /
+        sum(rate(http_requests_total[1h]))
+      ) &gt; 14.4 * 0.001
+    for: 2m
+    labels: {severity: page}
+    annotations:
+      summary: "Fast SLO burn — 2 kunda budget tugaydi"
+
+  # Slow burn — 6 soatda 5% budget = 6x burn rate
+  - alert: SLOBurnRateSlow
+    expr: |
+      (sum(rate(http_requests_total{status=~"5.."}[30m]))
+       / sum(rate(http_requests_total[30m]))) &gt; 6 * 0.001
+      AND
+      (sum(rate(http_requests_total{status=~"5.."}[6h]))
+       / sum(rate(http_requests_total[6h]))) &gt; 6 * 0.001
+    for: 15m
+    labels: {severity: ticket}
+    annotations:
+      summary: "Slow SLO burn — 5 kunda budget tugaydi"
+</code></pre>
+    </div>
+
+    <p><strong>Nega ikki window (5m AND 1h)?</strong> Flappy alert'dan qutulish. Qisqa window aniqlik beradi, uzun window noise'dan himoya qiladi. Ikki confirmatsiya — real muammo.</p>
+  </article>
+
+  <article class="topic" id="chaos-engineering" data-search>
+    <div class="topic-header">
+      <span class="topic-id">27.3</span>
+      <h3>chaos engineering — failure'ni o'zingiz tashlash</h3>
+    </div>
+    <div class="question">Production'da hech qachon test qilinmagan failure senariylari. Real downtime bo'lguncha bilmaysiz. Yechim?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Netflix: "Failure'ni bo'lishiga yo'l qo'yish — oldini olishdan ko'ra ustunroq"</div>
+      <p>Fikr: katta distributed system'da failure muqarrar. Savol — "agar bo'lsa" emas, "qachon bo'lsa". Oldindan CONTROLLED failure tashlab (staging, keyin production kichik %'da), tizim chidaydimi tekshirish. Buzilsa — fix, test. Asbobb'lar: <strong>Chaos Monkey</strong> (random VM termination), <strong>Gremlin</strong>, <strong>LitmusChaos</strong> (K8s), <strong>Toxiproxy</strong> (network).</p>
+    </div>
+
+    <h4>Chaos experiments hierarchy</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Level</th><th>Test</th><th>Boshlash</th></tr></thead>
+      <tbody>
+        <tr><td>1. Game Day</td><td>Manual, tabletop ("agar Redis o'lsa nima bo'ladi?")</td><td>Bir kun, barcha jamoa</td></tr>
+        <tr><td>2. Dependency failure</td><td>Downstream service'ni to'xtatish</td><td>Staging</td></tr>
+        <tr><td>3. Network chaos</td><td>Packet loss, latency injection</td><td>Toxiproxy + staging</td></tr>
+        <tr><td>4. Instance failure</td><td>Random pod/VM termination</td><td>Chaos Monkey, prod 1%</td></tr>
+        <tr><td>5. Region failure</td><td>Butun AZ/region'ni "simulate down"</td><td>DR drill, quarterly</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span>chaos_network.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python"># Toxiproxy bilan network chaos — staging'da
+# https://github.com/Shopify/toxiproxy
+import toxiproxy
+
+client = toxiproxy.Client()
+
+# Proxy yaratish — app → toxiproxy → DB
+proxy = client.create(
+    name="db_proxy",
+    listen="0.0.0.0:15432",
+    upstream="postgres.internal:5432"
+)
+
+# Experiment 1: latency injection
+proxy.add_toxic(
+    name="db_slow",
+    type="latency",
+    attributes={"latency": 500, "jitter": 100}  # +500ms ±100ms
+)
+
+# Run load test — app chidaydimi?
+run_load_test()
+metrics = collect_metrics()
+assert metrics["error_rate"] &lt; 0.01, "app didn't survive DB latency"
+
+# Experiment 2: connection drop (50% packet loss)
+proxy.update_toxic("db_slow", attributes={"latency": 0})
+proxy.add_toxic("db_drop", type="timeout", attributes={"timeout": 100})
+
+# Experiment 3: bandwidth limit
+proxy.add_toxic("db_bw", type="bandwidth", attributes={"rate": 1024})  # 1KB/s
+
+# Cleanup
+proxy.destroy()
+</code></pre>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">✓</span>
+      <div>
+        <div class="callout-title">Chaos engineering principles (Netflix)</div>
+        <p><strong>1. Steady state hypothesis.</strong> Avval "normal" nima ekanini aniqlang (SLI'lar).<br>
+        <strong>2. Vary real-world events.</strong> Real failures model qiling (NetworkFailed, DiskFull, InstanceLost).<br>
+        <strong>3. Run in production.</strong> Staging — start, production — haqiqiy test. Kichik blast radius.<br>
+        <strong>4. Automate continuously.</strong> CI'ga qo'shing — chaos test har deploy'da.<br>
+        <strong>5. Minimize blast radius.</strong> 0.1% trafik, 1 pod, 1 region — oldin hamma narsa o'ldirmaydi.</p>
+      </div>
+    </div>
+  </article>
 </section>
 
 <!-- ══════════════════════════════════════════════════════ -->
