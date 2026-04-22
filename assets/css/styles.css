@@ -595,6 +595,66 @@ tr:hover td { background: var(--green-dim); }
 ::selection { background: var(--green); color: var(--bg-deep); }
 a:focus-visible, button:focus-visible, input:focus-visible { outline: 1px solid var(--green); outline-offset: 2px; }
 
+/* ── Mobile responsive: prevent horizontal overflow ── */
+html.is-mobile body { overflow-x: hidden; max-width: 100vw; }
+html.is-mobile .layout { max-width: 100vw; overflow-x: hidden; }
+html.is-mobile .main { max-width: 100vw; overflow-x: hidden; }
+html.is-mobile .content { max-width: 100%; padding-left: 16px; padding-right: 16px; overflow-x: hidden; }
+
+/* Wrap long code lines instead of horizontal scroll */
+html.is-mobile pre,
+html.is-mobile pre code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  max-width: 100% !important;
+}
+html.is-mobile .code-block { max-width: 100%; overflow: hidden; }
+
+/* Inline code: allow wrapping */
+html.is-mobile code:not(pre code) {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Tables: allow horizontal scroll INSIDE the wrap only */
+html.is-mobile .table-wrap { max-width: 100%; overflow-x: auto; }
+html.is-mobile .table-wrap table { min-width: 0 !important; width: 100%; }
+html.is-mobile table { min-width: 0 !important; }
+
+/* SVG diagrams: fit viewport */
+html.is-mobile .svg-diagram { max-width: 100%; overflow-x: auto; }
+html.is-mobile .svg-diagram svg { min-width: 0 !important; max-width: 100%; height: auto; }
+
+/* ASCII art / diagrams: contain */
+html.is-mobile .hero-ascii,
+html.is-mobile .footer-ascii,
+html.is-mobile .diagram {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Long headings/text wrap */
+html.is-mobile h1, html.is-mobile h2, html.is-mobile h3, html.is-mobile h4,
+html.is-mobile p, html.is-mobile li {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* All top-level elements constrained */
+html.is-mobile .section,
+html.is-mobile .topic,
+html.is-mobile .intuition,
+html.is-mobile .question,
+html.is-mobile .callout,
+html.is-mobile .pros,
+html.is-mobile .cons {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 /* ── Mobile performance: applied immediately via <script> in <head> ── */
 html.is-mobile .section,
 html.is-mobile .topic,
