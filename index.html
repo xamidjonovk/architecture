@@ -3998,15 +3998,15 @@ eventSource.onerror = () => {
     </div>
   </article>
 </section>
-
 <!-- ══════════════════════════════════════════════════════ -->
-<!-- PART III: INFRASTRUCTURE                               -->
+<!-- PART III: PYTHON & FASTAPI MASTERY                     -->
 <!-- ══════════════════════════════════════════════════════ -->
 <div class="part-divider" data-search>
   <div class="part-divider-roman">Part III</div>
-  <h2 class="part-divider-title">infrastructure &amp; <span class="accent">platform</span></h2>
-  <p class="part-divider-desc">Python mastery, containers, Kubernetes, cloud, observability, resilience patterns, tail latency va production-grade instrumentation. Code yozish — 30%. Qolgan 70% — uni ishga tushirish, monitor qilish, xavfsiz saqlash va hatto nosozlik sharoitida ham ishlashini ta'minlash.</p>
+  <h2 class="part-divider-title">python &amp; <span class="accent">fastapi</span> mastery</h2>
+  <p class="part-divider-desc">Backend muhandisning kundalik quroli — Python tilini chuqur tushunish: async/await internals, typing, Pydantic v2, FastAPI dependency injection, SQLAlchemy 2.0, testing va performance. Framework'lar o'zgaradi, lekin tamoyillar bir xil: toza arxitektura, type safety, testlashtiriluvchi kod.</p>
 </div>
+
 
 <!-- ════════════ SECTION 08: PYTHON MASTERY ════════════ -->
 <section class="section" id="part-8" data-search>
@@ -5201,6 +5201,15 @@ def service(mock_dependencies):
     </div>
   </article>
 </section>
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- PART IV: INFRASTRUCTURE, CLOUD & RELIABILITY           -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="part-divider" data-search>
+  <div class="part-divider-roman">Part IV</div>
+  <h2 class="part-divider-title">infrastructure, <span class="accent">cloud</span> &amp; reliability</h2>
+  <p class="part-divider-desc">Docker, Kubernetes, CI/CD, AWS cloud (EC2, S3, RDS, Lambda, ECS/EKS, SageMaker, Bedrock), observability (metrics, logs, traces, eBPF), resilience patterns (circuit breaker, hedging, bulkhead), tail latency optimizatsiyasi va SLO-driven engineering. Kod ishlab chiqarishga chiqqanidan keyin boshlanadigan haqiqiy muhandislik — shu yerda.</p>
+</div>
+
 
 <!-- ════════════ SECTION 09: DEVOPS & CLOUD ════════════ -->
 <section class="section" id="part-9" data-search>
@@ -5706,17 +5715,913 @@ Severity levels:
   SEV-3: minor issue, workaround bor → working hours</div>
   </article>
 </section>
+<!-- ════════════ SECTION 11: AWS CLOUD ════════════ -->
 <section class="section" id="part-11" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
       <span class="section-num">11</span>
+      <h2 class="section-title">aws cloud — core services, ai va cost optimization</h2>
+    </div>
+  </div>
+
+  <!-- 11.1 AWS nima va nega -->
+  <article class="topic" id="aws-intro" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.1</span>
+      <h3>aws — nima, nega va qanday ishlaydi</h3>
+    </div>
+    <div class="question">AWS nima, nega hamma uni ishlatadi va asosiy tushunchalari qanday?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Oddiy tushuntirish</div>
+      <p><strong>AWS (Amazon Web Services)</strong> — Amazon'ning cloud platformasi. O'zingizning serveringiz yoki data-center'ingiz o'rniga, Amazon'ning dunyo bo'ylab tarqalgan infrastrukturasidan <strong>ijaraga</strong> olib foydalanasiz. Server kerak — EC2'da 2 daqiqada ishga tushadi. Database kerak — RDS bir klik. Global CDN — CloudFront. Siz faqat <strong>ishlatgan vaqtingiz uchun</strong> to'laysiz.</p>
+      <p><strong>Nega AWS dominant?</strong> Bozorda birinchi bo'lib chiqdi (2006), eng keng xizmatlar portfoliosi (200+ servis), dunyoning eng katta cloud infrastrukturasi (30+ region, 100+ Availability Zone), va 2026'da global cloud bozorining taxminan 31-32% ulushi. Netflix, Airbnb, Lyft, NASA — hammasi AWS ustida.</p>
+    </div>
+
+    <h4>AWS global infrastrukturasi — Region, AZ, Edge Location</h4>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-aws-1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00eaff"/></marker>
+      </defs>
+
+      <!-- Region box -->
+      <rect class="node-rect-alt" x="40" y="40" width="360" height="280"/>
+      <text x="220" y="65" fill="#ffffff" font-size="14" text-anchor="middle" font-weight="700">REGION (us-east-1)</text>
+      <text x="220" y="82" fill="#8ba08b" font-size="10" text-anchor="middle">Virginia, USA — physical geographic area</text>
+
+      <!-- AZ 1 -->
+      <rect class="node-rect" x="60" y="100" width="100" height="100"/>
+      <text x="110" y="122" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">AZ-a</text>
+      <text x="110" y="140" fill="#8ba08b" font-size="9" text-anchor="middle">Data Center 1</text>
+      <text x="110" y="156" fill="#8ba08b" font-size="9" text-anchor="middle">Own power</text>
+      <text x="110" y="170" fill="#8ba08b" font-size="9" text-anchor="middle">Own network</text>
+      <text x="110" y="186" fill="#8ba08b" font-size="9" text-anchor="middle">Independent</text>
+
+      <!-- AZ 2 -->
+      <rect class="node-rect" x="170" y="100" width="100" height="100"/>
+      <text x="220" y="122" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">AZ-b</text>
+      <text x="220" y="140" fill="#8ba08b" font-size="9" text-anchor="middle">Data Center 2</text>
+      <text x="220" y="156" fill="#8ba08b" font-size="9" text-anchor="middle">&lt;2ms latency</text>
+      <text x="220" y="170" fill="#8ba08b" font-size="9" text-anchor="middle">dedicated fiber</text>
+      <text x="220" y="186" fill="#8ba08b" font-size="9" text-anchor="middle">to other AZs</text>
+
+      <!-- AZ 3 -->
+      <rect class="node-rect" x="280" y="100" width="100" height="100"/>
+      <text x="330" y="122" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">AZ-c</text>
+      <text x="330" y="140" fill="#8ba08b" font-size="9" text-anchor="middle">Data Center 3</text>
+      <text x="330" y="156" fill="#8ba08b" font-size="9" text-anchor="middle">Isolated failure</text>
+      <text x="330" y="170" fill="#8ba08b" font-size="9" text-anchor="middle">domains</text>
+
+      <text x="220" y="230" fill="#ff00aa" font-size="11" text-anchor="middle" font-weight="700">Multi-AZ deployment = HA</text>
+      <text x="220" y="248" fill="#8ba08b" font-size="10" text-anchor="middle">RDS, EC2, EKS har AZ'da replika bo'lishi mumkin</text>
+      <text x="220" y="268" fill="#8ba08b" font-size="10" text-anchor="middle">Bir AZ down = trafik avtomatik boshqasiga</text>
+      <text x="220" y="296" fill="#b87eff" font-size="10" text-anchor="middle" font-style="italic">Region = bir shahar · AZ = alohida bino shahar ichida</text>
+
+      <!-- Edge Locations -->
+      <rect class="node-rect-info" x="440" y="40" width="240" height="120"/>
+      <text x="560" y="65" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="700">EDGE LOCATIONS (400+)</text>
+      <text x="560" y="84" fill="#8ba08b" font-size="10" text-anchor="middle">CloudFront CDN points-of-presence</text>
+      <text x="560" y="104" fill="#8ba08b" font-size="10" text-anchor="middle">Toshkent, Moskva, Tokyo, Paris...</text>
+      <text x="560" y="126" fill="#00ff88" font-size="11" text-anchor="middle">Users'ga eng yaqin keshlash</text>
+      <text x="560" y="144" fill="#8ba08b" font-size="9" text-anchor="middle">Static content, API cache, S3 Transfer Accelerator</text>
+
+      <!-- Global services -->
+      <rect class="node-rect-info" x="440" y="180" width="240" height="140"/>
+      <text x="560" y="205" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="700">GLOBAL SERVICES</text>
+      <text x="560" y="225" fill="#00eaff" font-size="10" text-anchor="middle">IAM · Route53 · CloudFront · S3 buckets</text>
+      <text x="560" y="245" fill="#8ba08b" font-size="10" text-anchor="middle">Barcha region'larda mavjud,</text>
+      <text x="560" y="262" fill="#8ba08b" font-size="10" text-anchor="middle">region tanlash shart emas</text>
+      <text x="560" y="290" fill="#ff00aa" font-size="10" text-anchor="middle">Regional services: EC2, RDS, Lambda,</text>
+      <text x="560" y="306" fill="#ff00aa" font-size="10" text-anchor="middle">VPC — har region'da alohida</text>
+
+      <line class="edge-line" x1="400" y1="100" x2="440" y2="100" marker-end="url(#arrow-aws-1)"/>
+      <line class="edge-line" x1="400" y1="240" x2="440" y2="240" marker-end="url(#arrow-aws-1)"/>
+
+      <text x="360" y="348" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">30+ Region · 100+ AZ · 400+ Edge · dunyoning eng katta cloud infrastrukturasi</text>
+    </svg>
+    </div>
+
+    <h4>AWS resurslari ierarxiyasi</h4>
+
+    <table class="term-table">
+      <thead><tr><th>Darajasi</th><th>Nima</th><th>Misol</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Region</strong></td><td>Geografik joy (shahar/mamlakat)</td><td>us-east-1 (Virginia), eu-west-1 (Ireland), ap-south-1 (Mumbai)</td></tr>
+        <tr><td><strong>Availability Zone</strong></td><td>Region ichidagi alohida data-center</td><td>us-east-1a, us-east-1b, us-east-1c</td></tr>
+        <tr><td><strong>Edge Location</strong></td><td>CDN tugunlari (AZ emas)</td><td>400+ nuqta — Toshkent, Istanbul, Riyadh...</td></tr>
+        <tr><td><strong>VPC</strong></td><td>Sizning virtual network'ingiz</td><td>10.0.0.0/16 — barcha EC2, RDS shu ichida</td></tr>
+        <tr><td><strong>Subnet</strong></td><td>VPC'ning AZ-specific qismi</td><td>10.0.1.0/24 (public), 10.0.2.0/24 (private)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Region tanlashning 3 mezoni:</strong>
+      <ul>
+        <li><strong>Latency</strong> — foydalanuvchilarga yaqin region (O'zbekistondan eu-central-1 Frankfurt yoki me-south-1 Bahrain eng yaqin)</li>
+        <li><strong>Compliance</strong> — GDPR uchun EU region, US Gov uchun GovCloud</li>
+        <li><strong>Narx</strong> — us-east-1 eng arzon (historical), Sao Paulo 40-50% qimmatroq</li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- 11.2 Compute: EC2, Lambda, Fargate -->
+  <article class="topic" id="aws-compute" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.2</span>
+      <h3>compute — ec2, lambda, fargate</h3>
+    </div>
+    <div class="question">AWS'da kod qayerda ishlaydi? Qachon VM, qachon serverless, qachon container?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>EC2 — Elastic Compute Cloud (virtual server)</h4>
+    <p>EC2 = cloud'dagi virtual mashina. Siz OS (Linux/Windows), CPU, RAM, disk tanlaysiz — 1-2 daqiqada ishga tushadi.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>ec2-launch.sh — boshlash</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-bash"># AMI tanlash (Amazon Machine Image = disk snapshot)
+aws ec2 run-instances \
+  --image-id ami-0c55b159cbfafe1f0 \   # Ubuntu 22.04
+  --instance-type t3.medium \          # 2 vCPU, 4GB RAM — $0.0416/soat
+  --key-name my-key \                  # SSH key
+  --security-group-ids sg-0abc123 \    # firewall qoidalari
+  --subnet-id subnet-0xyz456 \         # qaysi VPC subnet
+  --user-data file://init.sh           # boot vaqtida yugurtiriladigan script</code></pre>
+    </div>
+
+    <h5>EC2 instance turlari — qaysini tanlash</h5>
+    <table class="term-table">
+      <thead><tr><th>Oila</th><th>Xususiyat</th><th>Use case</th><th>Misol</th></tr></thead>
+      <tbody>
+        <tr><td><strong>T (Burstable)</strong></td><td>CPU credit tizim</td><td>Dev/test, past trafik API</td><td>t3.medium — $30/oy</td></tr>
+        <tr><td><strong>M (General)</strong></td><td>Balanced CPU/RAM</td><td>Web server, app server</td><td>m6i.large — $70/oy</td></tr>
+        <tr><td><strong>C (Compute)</strong></td><td>Yuqori CPU</td><td>Batch, video encoding</td><td>c6i.xlarge — $125/oy</td></tr>
+        <tr><td><strong>R (Memory)</strong></td><td>Ko'p RAM</td><td>Cache, in-memory DB</td><td>r6i.large — $92/oy</td></tr>
+        <tr><td><strong>G/P (GPU)</strong></td><td>NVIDIA GPU</td><td>ML training, inference</td><td>g5.xlarge (A10G) — $730/oy</td></tr>
+        <tr><td><strong>I (Storage)</strong></td><td>Tez NVMe SSD</td><td>DB, analytics</td><td>i4i.large — $135/oy</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>EC2 pricing modellari:</strong>
+      <ul>
+        <li><strong>On-Demand</strong> — soatlik, hech qanday majburiyatsiz. Eng qimmat. Dev/test uchun.</li>
+        <li><strong>Reserved (1-3 yil)</strong> — 40-72% arzon. Ishlab chiqarish uchun.</li>
+        <li><strong>Savings Plans</strong> — flexible 1-3 yil commitment, instance type'ni almashtirishga ruxsat.</li>
+        <li><strong>Spot</strong> — 70-90% arzon, lekin AWS istagan vaqt o'chirishi mumkin. Batch/fault-tolerant ishlar uchun.</li>
+      </ul>
+    </div>
+
+    <h4>Lambda — Serverless compute</h4>
+    <p>Server yo'q. Siz faqat funksiya yozasiz, AWS uni avtomatik ishga tushiradi. Talab bo'lmasa — 0 qator kod ishlamaydi, 0 dollar to'laysiz.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>lambda_handler.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import json
+import boto3
+
+s3 = boto3.client('s3')
+
+def lambda_handler(event, context):
+    """S3'ga yangi fayl yuklanganida avtomatik ishlaydi."""
+    for record in event['Records']:
+        bucket = record['s3']['bucket']['name']
+        key = record['s3']['object']['key']
+
+        # Faylni o'qish va qayta ishlash
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        data = obj['Body'].read()
+
+        # Thumbnail yaratish, AI model chaqirish va h.k.
+        process(data)
+
+    return {'statusCode': 200, 'body': json.dumps('OK')}</code></pre>
+    </div>
+
+    <p><strong>Lambda narxlari (2026):</strong> birinchi 1M chaqiruv bepul, keyin $0.20/1M request + $0.0000166667 per GB-second. 1M chaqiruv (har biri 500ms, 512MB) ≈ $4.5/oy.</p>
+
+    <div class="callout warn">
+      <strong>⚠ Lambda limitlari:</strong>
+      <ul>
+        <li>Maksimal ishlash vaqti: <strong>15 daqiqa</strong></li>
+        <li>Maksimal xotira: 10 GB</li>
+        <li>Cold start: 100ms - 5s (Python/Node) yoki 500ms - 10s (Java/.NET)</li>
+        <li>Stateful emas — har chaqiruv yangi konteyner bo'lishi mumkin. DB connection'larni har safar ochmang — global scope'da saqlang.</li>
+      </ul>
+    </div>
+
+    <h4>Fargate — Serverless containers</h4>
+    <p>Siz Docker konteyner yozasiz, AWS uni server'larsiz ishga tushiradi. ECS yoki EKS bilan ishlaydi. "Lambda" + "uzoq ishlaydigan server" kombinatsiyasi.</p>
+
+    <table class="term-table">
+      <thead><tr><th>Qachon tanlash</th><th>Mos variant</th></tr></thead>
+      <tbody>
+        <tr><td>Doimiy uzoq ishlaydigan web server</td><td>EC2 (Reserved) yoki Fargate</td></tr>
+        <tr><td>Event-driven, noto'g'ri trafik</td><td>Lambda</td></tr>
+        <tr><td>Docker-based microservices</td><td>Fargate (ECS/EKS)</td></tr>
+        <tr><td>GPU kerak</td><td>EC2 (G/P instance)</td></tr>
+        <tr><td>&gt;15 daqiqa ishlaydigan batch</td><td>EC2 Spot yoki AWS Batch</td></tr>
+        <tr><td>Maksimal nazorat (kernel tuning)</td><td>EC2</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 11.3 Storage: S3, EBS, EFS -->
+  <article class="topic" id="aws-storage" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.3</span>
+      <h3>storage — s3, ebs, efs</h3>
+    </div>
+    <div class="question">Ma'lumotni qayerda saqlash kerak? Object storage vs Block vs File.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>S3 — Simple Storage Service (object storage)</h4>
+    <p>S3 = cheksiz "papka" cloud'da. Fayl (object) yuklab qo'yasiz, URL orqali olasiz. <strong>99.999999999% (11 to'qqiz) durability</strong> — 10 million fayldan 1 tasini 10,000 yilda bir marta yo'qotish ehtimoli.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>s3_example.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import boto3
+
+s3 = boto3.client('s3')
+
+# Fayl yuklash
+s3.upload_file('photo.jpg', 'my-bucket', 'uploads/photo.jpg')
+
+# Presigned URL (1 soat) — frontend'dan to'g'ridan-to'g'ri yuklash
+url = s3.generate_presigned_url(
+    'put_object',
+    Params={'Bucket': 'my-bucket', 'Key': 'uploads/avatar.jpg'},
+    ExpiresIn=3600
+)
+
+# Lifecycle policy — 30 kun keyin Glacier'ga ko'chirish
+s3.put_bucket_lifecycle_configuration(
+    Bucket='my-bucket',
+    LifecycleConfiguration={
+        'Rules': [{
+            'Status': 'Enabled',
+            'Filter': {'Prefix': 'logs/'},
+            'Transitions': [{'Days': 30, 'StorageClass': 'GLACIER'}]
+        }]
+    }
+)</code></pre>
+    </div>
+
+    <h5>S3 storage classes — narxni optimallash</h5>
+    <table class="term-table">
+      <thead><tr><th>Class</th><th>Narx ($/GB/oy)</th><th>Retrieval</th><th>Use case</th></tr></thead>
+      <tbody>
+        <tr><td>Standard</td><td>$0.023</td><td>Darhol</td><td>Tez-tez ishlatilgan (web app)</td></tr>
+        <tr><td>Intelligent-Tiering</td><td>$0.023 + monitoring</td><td>Darhol</td><td>Avtomatik optimallash — noaniq pattern</td></tr>
+        <tr><td>Standard-IA</td><td>$0.0125</td><td>Darhol (retrieval fee)</td><td>Oyiga 1-2 marta kerak</td></tr>
+        <tr><td>Glacier Instant</td><td>$0.004</td><td>Darhol</td><td>Arxiv, lekin tez kerak</td></tr>
+        <tr><td>Glacier Flexible</td><td>$0.0036</td><td>1 daqiqa - 12 soat</td><td>Backup, compliance</td></tr>
+        <tr><td>Glacier Deep</td><td>$0.00099</td><td>12-48 soat</td><td>Yillik compliance (7 yil saqlash)</td></tr>
+      </tbody>
+    </table>
+
+    <h4>EBS vs EFS — qachon qaysi</h4>
+    <table class="term-table">
+      <thead><tr><th>Xususiyat</th><th>EBS (Block)</th><th>EFS (File)</th><th>S3 (Object)</th></tr></thead>
+      <tbody>
+        <tr><td>Qo'llanish</td><td>1 ta EC2'ga disk</td><td>Ko'p EC2'ga shared FS</td><td>HTTP API orqali</td></tr>
+        <tr><td>Protocol</td><td>Block device</td><td>NFSv4</td><td>REST API</td></tr>
+        <tr><td>Narx (GB/oy)</td><td>$0.08 (gp3)</td><td>$0.30 (Standard)</td><td>$0.023</td></tr>
+        <tr><td>Latency</td><td>&lt;1ms</td><td>&lt;10ms</td><td>&lt;100ms</td></tr>
+        <tr><td>Use case</td><td>DB disk, OS root</td><td>Shared CMS assets</td><td>Media, backup, log</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 11.4 Database: RDS, DynamoDB, Aurora -->
+  <article class="topic" id="aws-database" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.4</span>
+      <h3>database — rds, aurora, dynamodb, elasticache</h3>
+    </div>
+    <div class="question">AWS'da database uchun qanday variantlar bor?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>RDS — Managed relational databases</h4>
+    <p>RDS = AWS sizning PostgreSQL/MySQL/MariaDB/Oracle/SQL Server'ni boshqaradi: backup, patch, replica, failover. Siz faqat SQL yozasiz.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>rds-ha-setup.tf (Terraform)</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-hcl">resource "aws_db_instance" "postgres" {
+  identifier        = "prod-db"
+  engine            = "postgres"
+  engine_version    = "16.3"
+  instance_class    = "db.r6g.large"   # 2 vCPU, 16GB RAM — $200/oy
+  allocated_storage = 100              # GB (gp3 SSD)
+
+  multi_az                = true       # AZ-b'da hot standby (RTO &lt;60s)
+  backup_retention_period = 7          # kun
+  deletion_protection     = true
+
+  performance_insights_enabled = true  # query-level monitoring
+  monitoring_interval          = 60    # enhanced monitoring
+}
+
+resource "aws_db_instance" "read_replica" {
+  identifier          = "prod-db-reader"
+  replicate_source_db = aws_db_instance.postgres.id
+  instance_class      = "db.r6g.large"
+}</code></pre>
+    </div>
+
+    <h4>Aurora — AWS-native cloud database</h4>
+    <p><strong>Aurora = MySQL/PostgreSQL 3-5x tezroq, 1/10 narxdagi enterprise DB.</strong> Storage layer qayta yozilgan — 6 ta replika (3 AZ × 2 copy) avtomatik. Kompyut va storage alohida scale.</p>
+
+    <p><strong>Aurora Serverless v2</strong> — avtomatik scale 0.5 ACU ($0.06/soat)'dan 128 ACU'ga. Trafik yo'q — 0 dollar. Dev/test uchun juda yaxshi.</p>
+
+    <h4>DynamoDB — Managed NoSQL</h4>
+    <p>DynamoDB = AWS'ning key-value + document DB. Single-digit millisecond latency har qanday hajmda. "Serverless" — siz capacity planning qilmaysiz.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>dynamodb_usage.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import boto3
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('Users')
+
+# Put — single item
+table.put_item(Item={
+    'user_id': 'u123',        # Partition key
+    'email': 'k@example.com',
+    'plan': 'pro',
+    'created_at': 1713456789
+})
+
+# Get — O(1) lookup by partition key
+resp = table.get_item(Key={'user_id': 'u123'})
+
+# Query — multiple items with same partition key
+# Juda muhim: Scan ishlatmang — full table scan, qimmat!
+resp = table.query(
+    KeyConditionExpression='user_id = :uid',
+    ExpressionAttributeValues={':uid': 'u123'}
+)</code></pre>
+    </div>
+
+    <div class="callout warn">
+      <strong>⚠ DynamoDB anti-pattern'lari:</strong>
+      <ul>
+        <li><strong>Scan</strong> — full-table scan, sekin va qimmat. Faqat admin use-case'lar uchun.</li>
+        <li><strong>Hot partition</strong> — barcha trafik bitta partition key'ga tushsa (masalan, "global_counter") — throttle.</li>
+        <li><strong>Cross-partition transaction</strong> — cheklangan (TransactWriteItems max 100 item). RDBMS'dek emas.</li>
+      </ul>
+    </div>
+
+    <h4>ElastiCache — Managed Redis/Memcached</h4>
+    <p>In-memory cache. Redis (persistence, pub/sub, streams) yoki Memcached (faqat cache). Session, rate-limiter, leaderboard, real-time analytics uchun.</p>
+
+    <table class="term-table">
+      <thead><tr><th>Use case</th><th>Mos AWS servisi</th></tr></thead>
+      <tbody>
+        <tr><td>Klassik RDBMS (Postgres/MySQL), ACID, complex JOIN</td><td>RDS yoki Aurora</td></tr>
+        <tr><td>Global-scale, cheksiz, millisecond latency, key-value</td><td>DynamoDB</td></tr>
+        <tr><td>Analytics, data warehouse, PB-scale</td><td>Redshift yoki Athena (S3)</td></tr>
+        <tr><td>Full-text search, vector search</td><td>OpenSearch (Elasticsearch fork)</td></tr>
+        <tr><td>Graph (social, fraud)</td><td>Neptune</td></tr>
+        <tr><td>Time-series (IoT, metrics)</td><td>Timestream</td></tr>
+        <tr><td>Session, cache, rate-limit</td><td>ElastiCache (Redis)</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 11.5 Networking: VPC, CloudFront -->
+  <article class="topic" id="aws-networking" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.5</span>
+      <h3>networking — vpc, cloudfront, route53</h3>
+    </div>
+    <div class="question">AWS'da tarmoq qanday qurilgan? VPC, subnet, security group nima?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>VPC — Virtual Private Cloud</h4>
+    <p>VPC = sizning shaxsiy tarmog'ingiz cloud ichida. Kompaniyaning ofis tarmog'iga o'xshaydi — lekin cloud'da. Barcha EC2, RDS, Lambda shu VPC ichida yashaydi.</p>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-vpc-1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#00ff88"/></marker>
+      </defs>
+
+      <!-- Internet -->
+      <rect class="node-rect-alt" x="20" y="30" width="120" height="50"/>
+      <text x="80" y="54" fill="#ffffff" font-size="12" text-anchor="middle" font-weight="700">INTERNET</text>
+      <text x="80" y="72" fill="#8ba08b" font-size="9" text-anchor="middle">users · APIs</text>
+
+      <!-- Internet Gateway -->
+      <rect class="node-rect-info" x="170" y="30" width="100" height="50"/>
+      <text x="220" y="50" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Internet</text>
+      <text x="220" y="64" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Gateway</text>
+      <text x="220" y="78" fill="#8ba08b" font-size="9" text-anchor="middle">(IGW)</text>
+
+      <!-- VPC box -->
+      <rect x="160" y="110" width="540" height="260" fill="none" stroke="#00ff88" stroke-width="2" stroke-dasharray="6,3"/>
+      <text x="430" y="130" fill="#00ff88" font-size="13" text-anchor="middle" font-weight="700">VPC — 10.0.0.0/16</text>
+
+      <!-- Public subnet -->
+      <rect class="node-rect" x="190" y="150" width="230" height="100"/>
+      <text x="305" y="172" fill="#00ff88" font-size="12" text-anchor="middle" font-weight="700">PUBLIC SUBNET</text>
+      <text x="305" y="188" fill="#8ba08b" font-size="10" text-anchor="middle">10.0.1.0/24 (AZ-a)</text>
+      <rect class="node-rect-info" x="210" y="200" width="90" height="40"/>
+      <text x="255" y="224" fill="#ffffff" font-size="10" text-anchor="middle">ALB</text>
+      <rect class="node-rect-info" x="310" y="200" width="90" height="40"/>
+      <text x="355" y="224" fill="#ffffff" font-size="10" text-anchor="middle">NAT Gateway</text>
+
+      <!-- Private subnet -->
+      <rect class="node-rect" x="190" y="270" width="230" height="80"/>
+      <text x="305" y="292" fill="#ff00aa" font-size="12" text-anchor="middle" font-weight="700">PRIVATE SUBNET</text>
+      <text x="305" y="308" fill="#8ba08b" font-size="10" text-anchor="middle">10.0.2.0/24 (AZ-a)</text>
+      <rect class="node-rect-info" x="210" y="320" width="90" height="25"/>
+      <text x="255" y="338" fill="#ffffff" font-size="10" text-anchor="middle">EC2 app</text>
+      <rect class="node-rect-info" x="310" y="320" width="90" height="25"/>
+      <text x="355" y="338" fill="#ffffff" font-size="10" text-anchor="middle">EKS pods</text>
+
+      <!-- Database subnet -->
+      <rect class="node-rect" x="440" y="270" width="230" height="80"/>
+      <text x="555" y="292" fill="#b87eff" font-size="12" text-anchor="middle" font-weight="700">DATABASE SUBNET</text>
+      <text x="555" y="308" fill="#8ba08b" font-size="10" text-anchor="middle">10.0.3.0/24 (isolated)</text>
+      <rect class="node-rect-info" x="460" y="320" width="90" height="25"/>
+      <text x="505" y="338" fill="#ffffff" font-size="10" text-anchor="middle">RDS primary</text>
+      <rect class="node-rect-info" x="560" y="320" width="90" height="25"/>
+      <text x="605" y="338" fill="#ffffff" font-size="10" text-anchor="middle">RDS replica</text>
+
+      <!-- Security notes -->
+      <rect class="node-rect-alt" x="440" y="150" width="230" height="100"/>
+      <text x="555" y="172" fill="#ffffff" font-size="12" text-anchor="middle" font-weight="700">SECURITY LAYERS</text>
+      <text x="555" y="192" fill="#00ff88" font-size="10" text-anchor="middle">Security Group (stateful)</text>
+      <text x="555" y="208" fill="#ff00aa" font-size="10" text-anchor="middle">NACL (stateless, subnet-level)</text>
+      <text x="555" y="224" fill="#00eaff" font-size="10" text-anchor="middle">Route Table (per subnet)</text>
+      <text x="555" y="240" fill="#b87eff" font-size="10" text-anchor="middle">VPC Flow Logs (audit)</text>
+
+      <!-- Arrows -->
+      <line class="edge-line" x1="140" y1="55" x2="170" y2="55" marker-end="url(#arrow-vpc-1)"/>
+      <line class="edge-line" x1="220" y1="80" x2="255" y2="200" marker-end="url(#arrow-vpc-1)"/>
+      <line class="edge-line" x1="255" y1="240" x2="255" y2="320" marker-end="url(#arrow-vpc-1)"/>
+      <line class="edge-line-dash" x1="355" y1="240" x2="505" y2="320"/>
+
+      <text x="360" y="388" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">Internet → IGW → Public (ALB) → Private (app) → Database subnet. Bevosita internet'dan DB'ga kirish YO'Q.</text>
+    </svg>
+    </div>
+
+    <div class="callout">
+      <strong>Klassik 3-tier VPC arxitekturasi:</strong>
+      <ul>
+        <li><strong>Public subnet</strong> — ALB, NAT Gateway, bastion host. Internet ko'ra oladi.</li>
+        <li><strong>Private subnet</strong> — application servers, EKS nodes. NAT orqali internet'ga chiqa oladi, lekin kirish mumkin emas.</li>
+        <li><strong>Database subnet</strong> — RDS, ElastiCache. Internetdan to'liq ajratilgan. Faqat private subnet'dan kirish mumkin.</li>
+      </ul>
+    </div>
+
+    <h4>Security Group vs NACL</h4>
+    <table class="term-table">
+      <thead><tr><th></th><th>Security Group</th><th>NACL (Network ACL)</th></tr></thead>
+      <tbody>
+        <tr><td>Darajasi</td><td>Instance-level</td><td>Subnet-level</td></tr>
+        <tr><td>Stateful</td><td>Ha (ruxsat berilgan chiqish → kirish avtomatik)</td><td>Yo'q (ikki yo'nalish alohida)</td></tr>
+        <tr><td>Qoida turlari</td><td>Faqat allow</td><td>Allow + deny</td></tr>
+        <tr><td>Ko'pincha ishlatiladi</td><td>Ha — default layer</td><td>Faqat qo'shimcha himoya</td></tr>
+      </tbody>
+    </table>
+
+    <h4>CloudFront — Global CDN</h4>
+    <p>CloudFront = AWS'ning 400+ edge location'idan statik va dinamik content yetkazib berish. Toshkentdan so'rov — Moskva yoki Frankfurt edge'dan javob (50-100ms), direkt origin'ga (200-500ms) emas.</p>
+
+    <h4>Route53 — DNS</h4>
+    <p>DNS + health check + failover routing. Geographic routing (US→us-east, EU→eu-west), weighted routing (blue-green 90/10), latency-based routing.</p>
+  </article>
+
+  <!-- 11.6 Containers: ECS, EKS -->
+  <article class="topic" id="aws-containers" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.6</span>
+      <h3>containers — ecs, eks, ecr</h3>
+    </div>
+    <div class="question">Docker container'larni AWS'da qanday ishlatamiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>ECS vs EKS — tanlov</h4>
+    <table class="term-table">
+      <thead><tr><th></th><th>ECS (Elastic Container Service)</th><th>EKS (Elastic Kubernetes Service)</th></tr></thead>
+      <tbody>
+        <tr><td>Orchestrator</td><td>AWS-native (proprietary)</td><td>Standard Kubernetes</td></tr>
+        <tr><td>Murakkablik</td><td>Sodda, tezroq o'rganish</td><td>Murakkab, lekin universal</td></tr>
+        <tr><td>Narx (control plane)</td><td>Bepul</td><td>$0.10/soat per cluster ($73/oy)</td></tr>
+        <tr><td>Portability</td><td>AWS lock-in</td><td>Cloud-agnostic (GCP/Azure'ga ko'chirish mumkin)</td></tr>
+        <tr><td>Qachon tanlash</td><td>Faqat AWS'da qolasiz, kichik jamoa</td><td>Multi-cloud, yirik jamoa, K8s tajribasi bor</td></tr>
+      </tbody>
+    </table>
+
+    <h4>ECR — Elastic Container Registry</h4>
+    <p>AWS'ning Docker Hub'i. Image'larni push qilasiz, ECS/EKS pull qiladi. Private by default, IAM bilan access control, vulnerability scanning built-in.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>deploy-to-ecr.sh</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-bash"># ECR'ga login
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  123456789.dkr.ecr.us-east-1.amazonaws.com
+
+# Build va push
+docker build -t myapp:v1.2.3 .
+docker tag myapp:v1.2.3 \
+  123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.2.3
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.2.3</code></pre>
+    </div>
+  </article>
+
+  <!-- 11.7 IAM & Security -->
+  <article class="topic" id="aws-iam" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.7</span>
+      <h3>iam &amp; security — identity, access, encryption</h3>
+    </div>
+    <div class="question">AWS'da kim nima qila olishini qanday nazorat qilamiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>IAM — Identity and Access Management</h4>
+    <p>IAM = AWS'ning RBAC tizimi. 4 ta asosiy tushuncha:</p>
+    <ul>
+      <li><strong>User</strong> — alohida odam (uzoq muddatli credentials)</li>
+      <li><strong>Group</strong> — user'lar to'plami (masalan, "developers", "admins")</li>
+      <li><strong>Role</strong> — resurs tomonidan qabul qilinadigan identity (EC2 role, Lambda role)</li>
+      <li><strong>Policy</strong> — JSON hujjat — "kim nima qila oladi"</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-header"><span>iam-policy.json</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-json">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3ReadOnlyToSpecificBucket",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::my-app-uploads",
+        "arn:aws:s3:::my-app-uploads/*"
+      ],
+      "Condition": {
+        "StringEquals": {"aws:PrincipalTag/team": "backend"}
+      }
+    }
+  ]
+}</code></pre>
+    </div>
+
+    <div class="callout warn">
+      <strong>⚠ IAM best practices:</strong>
+      <ol>
+        <li><strong>Root account'ni ishlatmang</strong> — faqat dastlabki setup uchun, MFA yoqing, key o'chiring.</li>
+        <li><strong>Least privilege</strong> — minimum kerakli huquqlar. <code>*</code> ishlatmang.</li>
+        <li><strong>Role &gt; User</strong> — EC2, Lambda, ECS task'lariga role biriktiring, hech qachon kod ichida AWS key yozmang.</li>
+        <li><strong>MFA majburiy</strong> — barcha console user'lari uchun.</li>
+        <li><strong>Rotation</strong> — access key'larni 90 kunda yangilang. IAM Access Analyzer bilan toping.</li>
+        <li><strong>AWS Organizations + SCP</strong> — multi-account setup, guardrail sifatida.</li>
+      </ol>
+    </div>
+
+    <h4>KMS — Key Management Service</h4>
+    <p>Barcha shifrlashni AWS boshqaradi. S3 SSE-KMS, RDS encryption, EBS encryption — hammasi KMS key'lari bilan. Compliance (HIPAA, PCI-DSS) uchun zarur.</p>
+
+    <h4>Secrets Manager vs Parameter Store</h4>
+    <table class="term-table">
+      <thead><tr><th></th><th>Secrets Manager</th><th>SSM Parameter Store</th></tr></thead>
+      <tbody>
+        <tr><td>Auto-rotation</td><td>Ha (built-in RDS, Lambda)</td><td>Yo'q</td></tr>
+        <tr><td>Narx</td><td>$0.40/secret/oy</td><td>Standard: bepul; Advanced: $0.05/param</td></tr>
+        <tr><td>Use case</td><td>DB password, API key (critical)</td><td>Config (feature flag, URL, version)</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 11.8 AI services on AWS -->
+  <article class="topic" id="aws-ai" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.8</span>
+      <h3>aws ai services — bedrock, sagemaker, kendra, textract</h3>
+    </div>
+    <div class="question">AWS'da AI/ML workload'larni qanday ishlatamiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Amazon Bedrock — Managed Foundation Models</h4>
+    <p>Bedrock = "LLM marketplace" AWS ichida. Claude (Anthropic), Llama (Meta), Mistral, Cohere, Titan (AWS) — hammasini bitta API orqali ishlatasiz. Serverless — infrastructure yo'q.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>bedrock_claude.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">import boto3
+import json
+
+bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+response = bedrock.invoke_model(
+    modelId='anthropic.claude-opus-4-v1:0',  # 2026 hozirgi flagship
+    body=json.dumps({
+        'anthropic_version': 'bedrock-2023-05-31',
+        'max_tokens': 1024,
+        'messages': [
+            {'role': 'user', 'content': 'Explain AWS VPC in 2 sentences.'}
+        ]
+    })
+)
+
+result = json.loads(response['body'].read())
+print(result['content'][0]['text'])</code></pre>
+    </div>
+
+    <div class="callout">
+      <strong>Bedrock'ning 4 katta afzalligi:</strong>
+      <ol>
+        <li><strong>Data siz VPC'dan chiqmaydi</strong> — PrivateLink orqali. Compliance.</li>
+        <li><strong>Knowledge Bases</strong> — built-in RAG (S3 → vector store → retrieval), o'zingiz qurishingiz shart emas.</li>
+        <li><strong>Guardrails</strong> — PII redaction, toxic content filter, topic denial — built-in.</li>
+        <li><strong>Agents</strong> — tool-calling agent'lar (orchestration) framework built-in.</li>
+      </ol>
+    </div>
+
+    <h4>SageMaker — full ML lifecycle</h4>
+    <p>SageMaker = AWS'ning ML platform'i. Data prep (Data Wrangler) → Training (Training Jobs) → Deployment (Endpoints) → Monitoring (Model Monitor) — hammasi bir joyda.</p>
+
+    <table class="term-table">
+      <thead><tr><th>Use case</th><th>SageMaker komponent</th></tr></thead>
+      <tbody>
+        <tr><td>Jupyter notebook (data science)</td><td>SageMaker Studio / Notebook Instance</td></tr>
+        <tr><td>Classical ML training (XGBoost, sklearn)</td><td>Training Jobs + built-in algorithms</td></tr>
+        <tr><td>Deep learning (PyTorch, TensorFlow)</td><td>Training Jobs + distributed training</td></tr>
+        <tr><td>LLM fine-tuning (LoRA, QLoRA)</td><td>JumpStart + Training Jobs</td></tr>
+        <tr><td>Real-time inference</td><td>Real-time Endpoints (auto-scaling)</td></tr>
+        <tr><td>Batch inference</td><td>Batch Transform</td></tr>
+        <tr><td>Large batch (async, long-running)</td><td>Async Inference</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Tayyor AI services — pre-trained API'lar</h4>
+    <table class="term-table">
+      <thead><tr><th>Servis</th><th>Nima qiladi</th><th>Use case</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Textract</strong></td><td>PDF/rasmlardan matn + jadval + form ekstraksiya</td><td>Invoice, receipt, contract OCR</td></tr>
+        <tr><td><strong>Comprehend</strong></td><td>Sentiment, entity, language detection, topic modeling</td><td>Support ticket classification</td></tr>
+        <tr><td><strong>Translate</strong></td><td>75+ til avtomatik tarjima</td><td>Multilingual UI</td></tr>
+        <tr><td><strong>Transcribe</strong></td><td>Audio → matn (speech-to-text)</td><td>Call center transcripts</td></tr>
+        <tr><td><strong>Polly</strong></td><td>Matn → tabiiy audio (60+ ovoz)</td><td>Audiobook, voice assistant</td></tr>
+        <tr><td><strong>Rekognition</strong></td><td>Rasm/video: yuz, ob'ekt, matn, moderation</td><td>User-generated content filter</td></tr>
+        <tr><td><strong>Kendra</strong></td><td>Enterprise search (semantic, natural language)</td><td>Internal knowledge base search</td></tr>
+        <tr><td><strong>Personalize</strong></td><td>Real-time tavsiya tizimi</td><td>E-commerce recommendations</td></tr>
+        <tr><td><strong>Forecast</strong></td><td>Time-series forecasting (AutoML)</td><td>Inventory, demand planning</td></tr>
+      </tbody>
+    </table>
+
+    <h4>OpenSearch Vector Search — RAG uchun vector DB</h4>
+    <p>OpenSearch Service (Elasticsearch fork) k-NN plugin bilan — 2026 AWS'da eng mashhur vector store. Bedrock Knowledge Bases default'da shu'ni ishlatadi. Hybrid search (BM25 + vector) native qo'llab-quvvatlanadi.</p>
+
+    <h4>AI workload arxitekturasi — RAG misoli AWS'da</h4>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-ai-aws" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#ff00aa"/></marker>
+      </defs>
+
+      <rect class="node-rect-alt" x="20" y="40" width="110" height="50"/>
+      <text x="75" y="64" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">User Query</text>
+      <text x="75" y="78" fill="#8ba08b" font-size="9" text-anchor="middle">via API Gateway</text>
+
+      <rect class="node-rect" x="160" y="40" width="110" height="50"/>
+      <text x="215" y="58" fill="#00ff88" font-size="11" text-anchor="middle" font-weight="700">Lambda</text>
+      <text x="215" y="74" fill="#8ba08b" font-size="9" text-anchor="middle">orchestrator</text>
+
+      <rect class="node-rect" x="300" y="20" width="130" height="45"/>
+      <text x="365" y="38" fill="#00eaff" font-size="11" text-anchor="middle" font-weight="700">Bedrock</text>
+      <text x="365" y="54" fill="#8ba08b" font-size="9" text-anchor="middle">Titan Embed</text>
+
+      <rect class="node-rect" x="300" y="80" width="130" height="45"/>
+      <text x="365" y="98" fill="#b87eff" font-size="11" text-anchor="middle" font-weight="700">OpenSearch</text>
+      <text x="365" y="114" fill="#8ba08b" font-size="9" text-anchor="middle">kNN search</text>
+
+      <rect class="node-rect" x="460" y="40" width="130" height="50"/>
+      <text x="525" y="60" fill="#ff00aa" font-size="11" text-anchor="middle" font-weight="700">Bedrock</text>
+      <text x="525" y="76" fill="#8ba08b" font-size="9" text-anchor="middle">Claude Opus 4</text>
+
+      <rect class="node-rect-info" x="620" y="40" width="80" height="50"/>
+      <text x="660" y="58" fill="#ffffff" font-size="10" text-anchor="middle" font-weight="700">Response</text>
+      <text x="660" y="74" fill="#8ba08b" font-size="9" text-anchor="middle">+ sources</text>
+
+      <rect class="node-rect-alt" x="160" y="170" width="130" height="50"/>
+      <text x="225" y="188" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">S3 Documents</text>
+      <text x="225" y="204" fill="#8ba08b" font-size="9" text-anchor="middle">PDF, DOCX, HTML</text>
+
+      <rect class="node-rect" x="320" y="170" width="110" height="50"/>
+      <text x="375" y="188" fill="#00ff88" font-size="11" text-anchor="middle" font-weight="700">Lambda</text>
+      <text x="375" y="204" fill="#8ba08b" font-size="9" text-anchor="middle">chunk + embed</text>
+
+      <rect class="node-rect" x="460" y="170" width="130" height="50"/>
+      <text x="525" y="188" fill="#b87eff" font-size="11" text-anchor="middle" font-weight="700">OpenSearch</text>
+      <text x="525" y="204" fill="#8ba08b" font-size="9" text-anchor="middle">index</text>
+
+      <line class="edge-line" x1="130" y1="65" x2="160" y2="65" marker-end="url(#arrow-ai-aws)"/>
+      <line class="edge-line" x1="270" y1="55" x2="300" y2="42" marker-end="url(#arrow-ai-aws)"/>
+      <line class="edge-line" x1="270" y1="75" x2="300" y2="100" marker-end="url(#arrow-ai-aws)"/>
+      <line class="edge-line" x1="430" y1="65" x2="460" y2="65" marker-end="url(#arrow-ai-aws)"/>
+      <line class="edge-line" x1="590" y1="65" x2="620" y2="65" marker-end="url(#arrow-ai-aws)"/>
+      <line class="edge-line-dash" x1="290" y1="195" x2="320" y2="195"/>
+      <line class="edge-line-dash" x1="430" y1="195" x2="460" y2="195"/>
+
+      <text x="80" y="155" fill="#00ff88" font-size="11" font-weight="700">INFERENCE (query path)</text>
+      <text x="80" y="260" fill="#ff00aa" font-size="11" font-weight="700">INGESTION (batch, S3 event-triggered)</text>
+    </svg>
+    </div>
+  </article>
+
+  <!-- 11.9 Observability on AWS -->
+  <article class="topic" id="aws-observability" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.9</span>
+      <h3>observability — cloudwatch, x-ray</h3>
+    </div>
+    <div class="question">AWS'da tizim sog'lig'ini qanday kuzatamiz?</div>
+    <div class="answer-label">javob</div>
+
+    <h4>CloudWatch — metrics, logs, alarms</h4>
+    <ul>
+      <li><strong>Metrics</strong> — CPU, memory, request count, latency. Standard (5-min) va detailed (1-min) granularity.</li>
+      <li><strong>Logs</strong> — application + infrastructure log aggregation. Log Insights — SQL-like query.</li>
+      <li><strong>Alarms</strong> — threshold-based alerting (SNS → email/Slack/PagerDuty).</li>
+      <li><strong>Dashboards</strong> — custom grafiklar.</li>
+      <li><strong>Synthetics</strong> — Selenium-dek uptime monitoring.</li>
+    </ul>
+
+    <h4>X-Ray — distributed tracing</h4>
+    <p>Microservices'da so'rov qaysi servislar orqali o'tdi, qayerda sekinladi — X-Ray ko'rsatadi. OpenTelemetry bilan mos, Jaeger'ga o'xshash. Lambda, ECS, EKS'da built-in.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span>xray_python.py</span><button class="copy-btn">Copy</button></div>
+<pre><code class="language-python">from aws_xray_sdk.core import xray_recorder, patch_all
+
+# AWS SDK calls, requests, boto3 — hammasi avtomatik trace
+patch_all()
+
+@xray_recorder.capture('process_order')
+def process_order(order_id):
+    with xray_recorder.in_subsegment('validate'):
+        validate(order_id)
+    with xray_recorder.in_subsegment('charge_payment'):
+        charge(order_id)
+    with xray_recorder.in_subsegment('send_email'):
+        notify(order_id)</code></pre>
+    </div>
+  </article>
+
+  <!-- 11.10 Cost optimization -->
+  <article class="topic" id="aws-cost" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.10</span>
+      <h3>cost optimization — billingni kamaytirish strategiyalari</h3>
+    </div>
+    <div class="question">AWS hisobini qanday kamaytirish mumkin? 50% gacha tejash realmi?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Real foyda — companies</div>
+      <p>Airbnb — Reserved Instance + Savings Plan bilan compute'da 60% kamaytirdi. Pinterest — S3 Intelligent-Tiering bilan storage'da 40% tejadi. Lyft — Spot instances bilan batch jobs'da 80% kamaytirdi.</p>
+    </div>
+
+    <h4>Cost optimization'ning 7 asosiy texnikasi</h4>
+    <ol>
+      <li><strong>Right-sizing</strong> — Compute Optimizer'ni ishlating. Oversized instance'larni kichiklating. Odatda 20-30% tejash.</li>
+      <li><strong>Savings Plans / Reserved Instances</strong> — ishlab chiqarish uchun 1-3 yillik commitment. 40-72% chegirma.</li>
+      <li><strong>Spot Instances</strong> — batch, CI/CD, stateless workers uchun. 70-90% chegirma, lekin 2-min interrupt notice.</li>
+      <li><strong>S3 storage classes</strong> — Intelligent-Tiering (avtomatik), lifecycle rules (30 kun → IA, 90 kun → Glacier).</li>
+      <li><strong>Delete unused</strong> — idle EBS volumes, stale snapshots, old AMIs, unattached Elastic IPs ($3.6/oy har biri). AWS Trusted Advisor bepul topadi.</li>
+      <li><strong>Data transfer</strong> — eng kutilmagan xarajat. Internet egress $0.09/GB, inter-AZ $0.02/GB. VPC endpoints ishlatib S3/DynamoDB data transfer'ni bepul qiling.</li>
+      <li><strong>Auto-scaling + off-hours shutdown</strong> — dev/staging environment'larni ishdan tashqari vaqtda o'chirib qo'ying. 70% tejash.</li>
+    </ol>
+
+    <div class="callout warn">
+      <strong>⚠ Eng ko'p to'lanadigan 3 ta "sezilmas" xarajat:</strong>
+      <ul>
+        <li><strong>NAT Gateway</strong> — $32/oy + $0.045/GB processed. Multi-AZ = 3x narx. VPC endpoint ishlating S3/DynamoDB uchun.</li>
+        <li><strong>CloudWatch Logs ingestion</strong> — $0.50/GB ingest. Verbose logging tez qimmat bo'ladi. Log sampling + retention policy.</li>
+        <li><strong>Data transfer (internet egress)</strong> — CloudFront orqali chiqing, direkt S3/EC2'dan emas. 30-40% arzonroq.</li>
+      </ul>
+    </div>
+
+    <h4>FinOps vositalari</h4>
+    <table class="term-table">
+      <thead><tr><th>Vosita</th><th>Nima qiladi</th></tr></thead>
+      <tbody>
+        <tr><td>Cost Explorer</td><td>Xarajat vizualizatsiyasi, trend, forecast — bepul</td></tr>
+        <tr><td>Budgets</td><td>Alert'lar ($1000/oy o'tganda email)</td></tr>
+        <tr><td>Compute Optimizer</td><td>Right-sizing tavsiyalari — bepul</td></tr>
+        <tr><td>Trusted Advisor</td><td>50+ cost/security/performance check</td></tr>
+        <tr><td>Cost Anomaly Detection</td><td>ML-based anomaly alert</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <!-- 11.11 Well-Architected Framework -->
+  <article class="topic" id="aws-waf" data-search>
+    <div class="topic-header">
+      <span class="topic-id">11.11</span>
+      <h3>well-architected framework — 6 pillar</h3>
+    </div>
+    <div class="question">AWS'ning rasmiy "to'g'ri qurish" ko'rsatmasi qanday?</div>
+    <div class="answer-label">javob</div>
+
+    <p>AWS Well-Architected Framework — 6 ta <strong>pillar</strong> (ustun) atrofida qurilgan. Har bir arxitektura qarori shu 6 tomondan baholanadi:</p>
+
+    <div class="svg-diagram">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+      <rect class="node-rect-alt" x="30" y="40" width="100" height="160"/>
+      <text x="80" y="70" fill="#00ff88" font-size="14" text-anchor="middle" font-weight="700">1</text>
+      <text x="80" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Operational</text>
+      <text x="80" y="108" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Excellence</text>
+      <text x="80" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">IaC, CI/CD</text>
+      <text x="80" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Runbooks</text>
+      <text x="80" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">Post-mortems</text>
+
+      <rect class="node-rect-alt" x="140" y="40" width="100" height="160"/>
+      <text x="190" y="70" fill="#ff00aa" font-size="14" text-anchor="middle" font-weight="700">2</text>
+      <text x="190" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Security</text>
+      <text x="190" y="108" fill="#ffffff" font-size="11" text-anchor="middle"> </text>
+      <text x="190" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">IAM least-priv</text>
+      <text x="190" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Encryption</text>
+      <text x="190" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">Audit logs</text>
+
+      <rect class="node-rect-alt" x="250" y="40" width="100" height="160"/>
+      <text x="300" y="70" fill="#00eaff" font-size="14" text-anchor="middle" font-weight="700">3</text>
+      <text x="300" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Reliability</text>
+      <text x="300" y="108" fill="#ffffff" font-size="11" text-anchor="middle"> </text>
+      <text x="300" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">Multi-AZ/Region</text>
+      <text x="300" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Auto-recover</text>
+      <text x="300" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">Chaos testing</text>
+
+      <rect class="node-rect-alt" x="360" y="40" width="100" height="160"/>
+      <text x="410" y="70" fill="#b87eff" font-size="14" text-anchor="middle" font-weight="700">4</text>
+      <text x="410" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Performance</text>
+      <text x="410" y="108" fill="#ffffff" font-size="11" text-anchor="middle">Efficiency</text>
+      <text x="410" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">Right-sizing</text>
+      <text x="410" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Caching</text>
+      <text x="410" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">CDN</text>
+
+      <rect class="node-rect-alt" x="470" y="40" width="100" height="160"/>
+      <text x="520" y="70" fill="#ffaa00" font-size="14" text-anchor="middle" font-weight="700">5</text>
+      <text x="520" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Cost</text>
+      <text x="520" y="108" fill="#ffffff" font-size="11" text-anchor="middle">Optimization</text>
+      <text x="520" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">RIs, Spot</text>
+      <text x="520" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Lifecycle</text>
+      <text x="520" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">FinOps</text>
+
+      <rect class="node-rect-alt" x="580" y="40" width="110" height="160"/>
+      <text x="635" y="70" fill="#00ff88" font-size="14" text-anchor="middle" font-weight="700">6</text>
+      <text x="635" y="92" fill="#ffffff" font-size="11" text-anchor="middle" font-weight="700">Sustainability</text>
+      <text x="635" y="108" fill="#ffffff" font-size="11" text-anchor="middle"> </text>
+      <text x="635" y="135" fill="#8ba08b" font-size="9" text-anchor="middle">Energy-eff</text>
+      <text x="635" y="150" fill="#8ba08b" font-size="9" text-anchor="middle">Graviton ARM</text>
+      <text x="635" y="165" fill="#8ba08b" font-size="9" text-anchor="middle">Region choice</text>
+
+      <text x="360" y="225" fill="#8ba08b" font-size="11" text-anchor="middle" font-style="italic">Well-Architected Tool bepul — AWS Console'da arxitekturangizni 6 pillar bo'yicha baholaydi</text>
+    </svg>
+    </div>
+
+    <div class="callout">
+      <strong>Har pillar'ning 1 ta eng muhim savoli:</strong>
+      <ul>
+        <li><strong>Operational Excellence</strong> — "Deploy'da xatolik bo'lsa, 5 daqiqada avtomatik rollback qila olasizmi?"</li>
+        <li><strong>Security</strong> — "Bitta developer'ning credential'i o'g'irlangan taqdirda ham production data xavfsizmi?"</li>
+        <li><strong>Reliability</strong> — "us-east-1 to'liq o'chsa, tizimingiz 1 soat ichida boshqa region'da ishlay oladimi?"</li>
+        <li><strong>Performance</strong> — "Trafik 10x oshsa, qo'lda nimadir qilishingiz kerakmi?"</li>
+        <li><strong>Cost</strong> — "Har bir servis uchun oyiga qancha to'layotganingizni bilasizmi? Buni tag orqali ajrata olasizmi?"</li>
+        <li><strong>Sustainability</strong> — "Graviton (ARM) instance'larini ishlatyapsizmi? Ular ~20% kamroq energiya sarflaydi va ~20% arzonroq."</li>
+      </ul>
+    </div>
+
+    <h4>Yakun — AWS'ni o'rganish yo'li</h4>
+    <ol>
+      <li><strong>Fundamentals</strong> (1-2 oy): Core services (EC2, S3, VPC, IAM, RDS), AWS CLI, bitta kichik app deploy qilish.</li>
+      <li><strong>Certifications</strong> (ixtiyoriy): Solutions Architect Associate → Professional. Interview'larda qadrlanadi.</li>
+      <li><strong>IaC</strong>: Terraform yoki CDK — "click-ops" dan uzoqroq bo'ling.</li>
+      <li><strong>Well-Architected review</strong>: har 6 oyda arxitekturangizni baholang.</li>
+      <li><strong>FinOps</strong>: Cost Explorer + tagging — xarajatlarni loyihalar/jamoalar bo'yicha ajrating.</li>
+    </ol>
+  </article>
+</section>
+
+
+<section class="section" id="part-12" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">12</span>
       <h2 class="section-title">resilience patterns — circuit breaker, hedging, bulkhead</h2>
     </div>
   </div>
 
   <article class="topic" id="circuit-breaker" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.1</span>
+      <span class="topic-id">12.1</span>
       <h3>circuit breaker — cascading failure oldini olish</h3>
     </div>
     <div class="question">Downstream service sekinlashdi. Sizning service'ingiz 5000 RPS bilan uni bombardmon qilib turibdi. Barcha thread poll'lar band — butun tizim yonadi. Nima qilish kerak?</div>
@@ -5820,7 +6725,7 @@ async def charge(amount):
 
   <article class="topic" id="hedging-timeout" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.2</span>
+      <span class="topic-id">12.2</span>
       <h3>timeout + hedging — tail latency'ni 10x kamaytirish</h3>
     </div>
     <div class="question">p99 latency 2 sekund, p50 50ms. Foydalanuvchi p99'ga tushsa loading spinner ko'radi. Qanday 50ms'ga qisqartirish?</div>
@@ -5908,7 +6813,7 @@ async def get_user(user_id: int):
 
   <article class="topic" id="bulkhead" data-search>
     <div class="topic-header">
-      <span class="topic-id">11.3</span>
+      <span class="topic-id">12.3</span>
       <h3>bulkhead — bitta muammo butun tizimni buzmasin</h3>
     </div>
     <div class="question">Bitta slow downstream barcha thread'ni band qildi — boshqa tezlikdagi downstream'lar ham blokirovka. Yechim?</div>
@@ -5960,17 +6865,17 @@ async def process_order():
     <p><strong>Sizing formula:</strong> <code>max_concurrent ≈ service_rps × p99_latency</code>. Agar downstream 100 RPS hazm qiladi va p99 = 200ms bo'lsa — pool 20 yetarli (100 × 0.2).</p>
   </article>
 </section>
-<section class="section" id="part-12" data-search>
+<section class="section" id="part-13" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">12</span>
+      <span class="section-num">13</span>
       <h2 class="section-title">tail latency, pool sizing, backpressure</h2>
     </div>
   </div>
 
   <article class="topic" id="tail-latency" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.1</span>
+      <span class="topic-id">13.1</span>
       <h3>tail latency — nega p99.9 muhim</h3>
     </div>
     <div class="question">p50 = 50ms, p99 = 200ms. Dashboard'da "hammasi yaxshi". Nega user'lar "sekin" deb shikoyat qiladi?</div>
@@ -6010,7 +6915,7 @@ async def process_order():
 
   <article class="topic" id="pool-sizing" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.2</span>
+      <span class="topic-id">13.2</span>
       <h3>connection pool sizing — matematik yondashuv</h3>
     </div>
     <div class="question">PostgreSQL pool_size = 5? 50? 500? Ko'pi yaxshimi?</div>
@@ -6084,7 +6989,7 @@ httpx.AsyncClient(
 
   <article class="topic" id="backpressure" data-search>
     <div class="topic-header">
-      <span class="topic-id">12.3</span>
+      <span class="topic-id">13.3</span>
       <h3>backpressure — upstream'ni sekinlashtirish</h3>
     </div>
     <div class="question">Queue'ga 10K msg/s keladi, consumer 1K/s ishlay oladi. Queue cheksiz o'sa — memory tugaydi. Yechim?</div>
@@ -6138,17 +7043,17 @@ async def producer():
     </div>
   </article>
 </section>
-<section class="section" id="part-13" data-search>
+<section class="section" id="part-14" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">13</span>
+      <span class="section-num">14</span>
       <h2 class="section-title">production observability — eBPF, tracing, SLO</h2>
     </div>
   </div>
 
   <article class="topic" id="ebpf-observability" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.1</span>
+      <span class="topic-id">14.1</span>
       <h3>eBPF — kernel'ni code bilan kuzatish</h3>
     </div>
     <div class="question">App bir xil infra'da, bir xil kod, ba'zan p99 200ms o'rniga 2s. Stack trace yo'q, log'lar toza. Nima qilish?</div>
@@ -6204,7 +7109,7 @@ docker run --pid=host --privileged grafana/beyla \
 
   <article class="topic" id="slo-errorbudget" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.2</span>
+      <span class="topic-id">14.2</span>
       <h3>SLO / SLI / error budget — reliability engineering</h3>
     </div>
     <div class="question">"Biz 99.9% uptime'ga intilamiz" — bu qoida qanday amaliy hal qilinadi? Deploy'ni qachon to'xtatish kerak?</div>
@@ -6284,7 +7189,7 @@ groups:
 
   <article class="topic" id="chaos-engineering" data-search>
     <div class="topic-header">
-      <span class="topic-id">13.3</span>
+      <span class="topic-id">14.3</span>
       <h3>chaos engineering — failure'ni o'zingiz tashlash</h3>
     </div>
     <div class="question">Production'da hech qachon test qilinmagan failure senariylari. Real downtime bo'lguncha bilmaysiz. Yechim?</div>
@@ -6363,24 +7268,25 @@ proxy.destroy()
   </article>
 </section>
 <!-- ══════════════════════════════════════════════════════ -->
-<!-- PART IV: AI ARCHITECTURE                               -->
+<!-- PART V: AI ARCHITECTURE                                -->
 <!-- ══════════════════════════════════════════════════════ -->
 <div class="part-divider" data-search>
-  <div class="part-divider-roman">Part IV</div>
-  <h2 class="part-divider-title">ai architecture — <span class="accent">llm</span>, rag, agents, advanced patterns</h2>
-  <p class="part-divider-desc">Zamonaviy AI — passiv chatbot emas, aktiv ish bajaruvchi komponent. LLM fundamentals, barcha RAG arxitekturalari (naive → agentic → GraphRAG), vector search, fine-tuning, agentic AI, multi-agent systems, MCP, AI Memory, SLM va MoE, plus production-critical mavzular: LLM observability/evaluation va guardrails. Bu qism — butun qo'llanmaning yuragi.</p>
+  <div class="part-divider-roman">Part V</div>
+  <h2 class="part-divider-title">ai architecture — <span class="accent">llm</span>, rag, agents</h2>
+  <p class="part-divider-desc">LLM fundamentals, barcha RAG arxitekturalari (naive → agentic → GraphRAG), embeddings va vector search, fine-tuning (LoRA/QLoRA), agentic AI, multi-agent systems, MCP, production AI: LLM observability/evaluation, guardrails va structured outputs. Zamonaviy AI — passiv chatbot emas, aktiv ish bajaruvchi production komponent.</p>
 </div>
-<section class="section" id="part-14" data-search>
+
+<section class="section" id="part-15" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">14</span>
+      <span class="section-num">15</span>
       <h2 class="section-title">llm fundamentals — how language models work</h2>
     </div>
   </div>
 
   <article class="topic" id="llm-basics" data-search>
     <div class="topic-header">
-      <span class="topic-id">14.1</span>
+      <span class="topic-id">15.1</span>
       <h3>llm qanday ishlaydi — engineering perspective</h3>
     </div>
     <div class="question">LLM black box emas — uni tushunish kerak. Qanday ishlaydi?</div>
@@ -6608,17 +7514,17 @@ async def chat_with_tools(user_message: str):
     </div>
   </article>
 </section>
-<section class="section" id="part-15" data-search>
+<section class="section" id="part-16" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">15</span>
+      <span class="section-num">16</span>
       <h2 class="section-title">rag architectures — naive to agentic</h2>
     </div>
   </div>
 
   <article class="topic" id="rag-intro" data-search>
     <div class="topic-header">
-      <span class="topic-id">15.1</span>
+      <span class="topic-id">16.1</span>
       <h3>nima uchun rag va qanday ishlaydi</h3>
     </div>
     <div class="question">LLM biladi, lekin sizning ma'lumotlaringizni bilmaydi. Qanday qo'shiladi?</div>
@@ -6797,7 +7703,7 @@ async def answer_question(question: str, tenant_id: str) -> dict:
 
   <article class="topic" id="rag-advanced" data-search>
     <div class="topic-header">
-      <span class="topic-id">15.2</span>
+      <span class="topic-id">16.2</span>
       <h3>hybrid rag — production baseline</h3>
     </div>
     <div class="question">Pure vector search yetarli emas — hybrid nima va nega?</div>
@@ -7029,7 +7935,7 @@ async def agentic_rag_answer(question: str, max_iterations: int = 5):
 
   <article class="topic" id="rag-evaluation" data-search>
     <div class="topic-header">
-      <span class="topic-id">15.3</span>
+      <span class="topic-id">16.3</span>
       <h3>rag evaluation — how to measure</h3>
     </div>
     <div class="question">RAG sistemangiz yaxshi ishlayaptimi qanday bilasiz?</div>
@@ -7074,17 +7980,17 @@ print(result)
     </div>
   </article>
 </section>
-<section class="section" id="part-16" data-search>
+<section class="section" id="part-17" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">16</span>
+      <span class="section-num">17</span>
       <h2 class="section-title">embeddings &amp; vector search — deep dive</h2>
     </div>
   </div>
 
   <article class="topic" id="embedding-models" data-search>
     <div class="topic-header">
-      <span class="topic-id">16.1</span>
+      <span class="topic-id">17.1</span>
       <h3>embedding models — tanlov va tradeoffs</h3>
     </div>
     <div class="question">Qaysi embedding model'ni qachon tanlash?</div>
@@ -7137,7 +8043,7 @@ response = await openai.embeddings.create(
 
   <article class="topic" id="rerankers-advanced" data-search>
     <div class="topic-header">
-      <span class="topic-id">16.2</span>
+      <span class="topic-id">17.2</span>
       <h3>rerankers — precision booster</h3>
     </div>
     <div class="question">Reranker nima va nega 30-50% accuracy oshiradi?</div>
@@ -7188,17 +8094,17 @@ from jina_ai_search_foundation_sdk import JinaRerank</code></pre>
     </div>
   </article>
 </section>
-<section class="section" id="part-17" data-search>
+<section class="section" id="part-18" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">17</span>
+      <span class="section-num">18</span>
       <h2 class="section-title">fine-tuning &amp; local llms — lora, qlora, deployment</h2>
     </div>
   </div>
 
   <article class="topic" id="when-finetune" data-search>
     <div class="topic-header">
-      <span class="topic-id">17.1</span>
+      <span class="topic-id">18.1</span>
       <h3>qachon fine-tune kerak vs rag vs prompting</h3>
     </div>
     <div class="question">Prompt, RAG, yoki fine-tuning — qaysi birini qachon?</div>
@@ -7234,7 +8140,7 @@ Hybrid pattern — eng kuchli:
 
   <article class="topic" id="lora-qlora" data-search>
     <div class="topic-header">
-      <span class="topic-id">17.2</span>
+      <span class="topic-id">18.2</span>
       <h3>lora va qlora — parameter-efficient fine-tuning</h3>
     </div>
     <div class="question">LoRA va QLoRA qanday ishlaydi va qanday qilinadi?</div>
@@ -7425,17 +8331,17 @@ print(response.choices[0].message.content)</code></pre>
     </div>
   </article>
 </section>
-<section class="section" id="part-18" data-search>
+<section class="section" id="part-19" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">18</span>
+      <span class="section-num">19</span>
       <h2 class="section-title">ai agents, multi-agent &amp; mcp</h2>
     </div>
   </div>
 
   <article class="topic" id="agent-fundamentals" data-search>
     <div class="topic-header">
-      <span class="topic-id">18.1</span>
+      <span class="topic-id">19.1</span>
       <h3>ai agents — autonomous task executors</h3>
     </div>
     <div class="question">AI agent nima va passiv chatbot'dan qanday farq qiladi?</div>
@@ -7564,7 +8470,7 @@ async def react_agent(task: str, max_steps: int = 10):
 
   <article class="topic" id="multi-agent" data-search>
     <div class="topic-header">
-      <span class="topic-id">18.2</span>
+      <span class="topic-id">19.2</span>
       <h3>multi-agent systems — orchestration patterns</h3>
     </div>
     <div class="question">Bir agent yetmaydi — ko'p agent qanday birga ishlaydi?</div>
@@ -7714,7 +8620,7 @@ result = crew.kickoff()</code></pre>
 
   <article class="topic" id="mcp-protocol" data-search>
     <div class="topic-header">
-      <span class="topic-id">18.3</span>
+      <span class="topic-id">19.3</span>
       <h3>mcp — model context protocol</h3>
     </div>
     <div class="question">MCP nima va nima uchun muhim?</div>
@@ -7895,17 +8801,17 @@ if __name__ == "__main__":
     </div>
   </article>
 </section>
-<section class="section" id="part-19" data-search>
+<section class="section" id="part-20" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">19</span>
+      <span class="section-num">20</span>
       <h2 class="section-title">production ai — llmops, safety, cost optimization</h2>
     </div>
   </div>
 
   <article class="topic" id="llmops" data-search>
     <div class="topic-header">
-      <span class="topic-id">19.1</span>
+      <span class="topic-id">20.1</span>
       <h3>llmops — production ai lifecycle</h3>
     </div>
     <div class="question">AI tizimni production'da qanday boshqarish?</div>
@@ -8058,17 +8964,17 @@ async def safe_llm_call(prompt: str):
     </div>
   </article>
 </section>
-<section class="section" id="part-20" data-search>
+<section class="section" id="part-21" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">20</span>
+      <span class="section-num">21</span>
       <h2 class="section-title">advanced RAG — chunking, reranking, GraphRAG</h2>
     </div>
   </div>
 
   <article class="topic" id="chunking-strategies" data-search>
     <div class="topic-header">
-      <span class="topic-id">20.1</span>
+      <span class="topic-id">21.1</span>
       <h3>chunking strategies — RAG sifatining 50%'i</h3>
     </div>
     <div class="question">Matnni qanday bo'laklar ga bo'lish kerak? Bu savol RAG muvaffaqiyatini belgilaydi.</div>
@@ -8155,7 +9061,7 @@ async def embed_chunks(doc: str, chunks: list[str]):
 
   <article class="topic" id="hybrid-search-reranking" data-search>
     <div class="topic-header">
-      <span class="topic-id">20.2</span>
+      <span class="topic-id">21.2</span>
       <h3>hybrid search + reranking — production standard 2026</h3>
     </div>
     <div class="question">Faqat vector search yetarli emas. Senior production RAG qanday ishlaydi?</div>
@@ -8318,17 +9224,17 @@ async def graph_query(query: str) -> str:
     </div>
   </article>
 </section>
-<section class="section" id="part-21" data-search>
+<section class="section" id="part-22" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">21</span>
+      <span class="section-num">22</span>
       <h2 class="section-title">LLM observability &amp; evaluation — production AI</h2>
     </div>
   </div>
 
   <article class="topic" id="llm-evals" data-search>
     <div class="topic-header">
-      <span class="topic-id">21.1</span>
+      <span class="topic-id">22.1</span>
       <h3>LLM eval — "ishlayabdi"dan "o'lchanadigan sifat"ga</h3>
     </div>
     <div class="question">AI feature deploy qildingiz. 3 hafta o'tdi. Ehtimoliy hallucination rate nima? Javob bera olasizmi?</div>
@@ -8442,7 +9348,7 @@ async def run_eval_suite(dataset_path: str, system_under_test):
 
   <article class="topic" id="llm-cost-tracking" data-search>
     <div class="topic-header">
-      <span class="topic-id">21.2</span>
+      <span class="topic-id">22.2</span>
       <h3>LLM cost &amp; observability — token/user tracking</h3>
     </div>
     <div class="question">Qaysi user qancha token yondiradi? Qaysi prompt eng qimmat? Production'da aniq javob bera olasizmi?</div>
@@ -8553,17 +9459,17 @@ async def llm_call(
     </div>
   </article>
 </section>
-<section class="section" id="part-22" data-search>
+<section class="section" id="part-23" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
-      <span class="section-num">22</span>
+      <span class="section-num">23</span>
       <h2 class="section-title">guardrails &amp; structured outputs — reliability</h2>
     </div>
   </div>
 
   <article class="topic" id="structured-outputs" data-search>
     <div class="topic-header">
-      <span class="topic-id">22.1</span>
+      <span class="topic-id">23.1</span>
       <h3>structured outputs — JSON schema, tool use</h3>
     </div>
     <div class="question">LLM javobi majburan JSON bo'lishi kerak. Qanday kafolatlash?</div>
@@ -8637,7 +9543,7 @@ validated = ExtractedOrder(**tool_input)
 
   <article class="topic" id="safety-guardrails" data-search>
     <div class="topic-header">
-      <span class="topic-id">22.2</span>
+      <span class="topic-id">23.2</span>
       <h3>safety guardrails — input/output filtering</h3>
     </div>
     <div class="question">LLM feature ishga tushdi. User abusive input yubordi, LLM toxic javob berdi. Bu productionni qanday himoya qilasiz?</div>
@@ -8729,285 +9635,12 @@ async def safe_llm_call(user_input: str):
   </article>
 </section>
 <!-- ══════════════════════════════════════════════════════ -->
-<!-- PART V: SYNTHESIS                                      -->
-<!-- ══════════════════════════════════════════════════════ -->
-<div class="part-divider" data-search>
-  <div class="part-divider-roman">Part V</div>
-  <h2 class="part-divider-title">architecture <span class="accent">decisions</span> &amp; trade-offs</h2>
-  <p class="part-divider-desc">Texnikalarni bilish — yarmi. Qachon qaysini tanlash — ikkinchi yarmi. Bu qismda tradeoff'lar, decision framework'lar va 2026 career roadmap.</p>
-</div>
-
-<section class="section" id="part-23" data-search>
-  <div class="section-marker">
-    <div class="section-marker-row">
-      <span class="section-num">23</span>
-      <h2 class="section-title">architecture decisions &amp; trade-offs</h2>
-    </div>
-  </div>
-
-  <article class="topic" id="tradeoffs-matrix" data-search>
-    <div class="topic-header">
-      <span class="topic-id">23.1</span>
-      <h3>tradeoffs matrix — umumiy qarorlar</h3>
-    </div>
-    <div class="question">Texnologiya tanlashda qanday tradeoff'lar bor?</div>
-    <div class="answer-label">javob</div>
-
-    <div class="intuition">
-      <div class="label">Architect'ning asosiy ishi</div>
-      <p>Code yozish — dasturchi ishi. Arxitektor — "trade-off'lar menejeri". Har qaror cost, latency, complexity, reliability, flexibility o'rtasida. "Eng yaxshi" yo'q — "sizning konteksingiz uchun optimal" bor.</p>
-    </div>
-
-    <h4>Monolith vs Microservice</h4>
-
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>Aspect</th><th>Monolith</th><th>Microservices</th></tr></thead>
-      <tbody>
-        <tr><td>Development speed (start)</td><td>Tez</td><td>Sekin (infra setup)</td></tr>
-        <tr><td>Development speed (scale)</td><td>Sekinlashadi</td><td>Tez (parallel teams)</td></tr>
-        <tr><td>Deployment</td><td>Bir button, bir risk</td><td>Independent, lekin orchestrate</td></tr>
-        <tr><td>Debugging</td><td>Oson (bitta log)</td><td>Qiyin (distributed tracing kerak)</td></tr>
-        <tr><td>Data consistency</td><td>ACID transactions</td><td>Saga, eventual consistency</td></tr>
-        <tr><td>Network cost</td><td>In-process (0)</td><td>gRPC/HTTP overhead</td></tr>
-        <tr><td>Team size</td><td>&lt;20 dev</td><td>50+ dev</td></tr>
-        <tr><td>When to use</td><td>Startup, MVP, small team</td><td>Scale, independent teams</td></tr>
-      </tbody>
-    </table>
-    </div>
-
-    <div class="callout success">
-      <span class="callout-icon">✓</span>
-      <div class="callout-content">
-        <div class="callout-title">Modular Monolith — to'g'ri yondashuv</div>
-        <p>Boshlang'ichda: <strong>modular monolith</strong>. Code'ni mantiqiy module'larga bo'ling (bounded contexts), lekin bitta deploy. Kerak bo'lganda module'ni alohida service qilib chiqarish oson. "Microservice first" — antipattern kichik jamoalar uchun.</p>
-      </div>
-    </div>
-
-    <h4>SQL vs NoSQL</h4>
-
-    <div class="pros-cons">
-      <div class="pros">
-        <h6>PostgreSQL (SQL) — default</h6>
-        <ul>
-          <li>ACID, relational integrity</li>
-          <li>Complex queries, JOINs</li>
-          <li>JSONB — kerak bo'lsa NoSQL</li>
-          <li>Full-text search built-in</li>
-          <li>Vector support (pgvector)</li>
-          <li>Mature, 40+ yosh ecosystem</li>
-        </ul>
-      </div>
-      <div class="cons">
-        <h6>NoSQL — specific cases</h6>
-        <ul>
-          <li>MongoDB: schema-flexible doc store</li>
-          <li>DynamoDB: massive scale key-value</li>
-          <li>Cassandra: write-heavy time-series</li>
-          <li>Redis: cache, pubsub, real-time</li>
-          <li>Neo4j: graph relationships</li>
-        </ul>
-      </div>
-    </div>
-
-    <p><strong>Rule of thumb 2026:</strong> PostgreSQL'dan boshlang. 90% SaaS muammolari unda hal bo'ladi. Limit'ga urilgandagina specialize qiling.</p>
-
-    <h4>Sync vs Async</h4>
-
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>Use case</th><th>Sync</th><th>Async</th></tr></thead>
-      <tbody>
-        <tr><td>REST API request</td><td>✓ default</td><td>Faqat I/O bound bo'lsa</td></tr>
-        <tr><td>Database query</td><td>Oddiy, ishonchli</td><td>Ko'p concurrent request</td></tr>
-        <tr><td>File upload/download</td><td>Sekin, block</td><td>✓ ishlatilishi shart</td></tr>
-        <tr><td>External API calls</td><td>Bir nechta seconds</td><td>✓ paralel, tez</td></tr>
-        <tr><td>Email, SMS</td><td>User kutsin? Yo'q</td><td>✓ queue'ga</td></tr>
-        <tr><td>Reports, exports</td><td>Timeout risk</td><td>✓ background job</td></tr>
-        <tr><td>Real-time push</td><td>Impossible</td><td>✓ WebSocket/SSE</td></tr>
-      </tbody>
-    </table>
-    </div>
-
-    <h4>Build vs Buy</h4>
-
-    <div class="diagram">Build qilish jonkuyar:
-  - Core business logic (sizning raqobat afzalligingiz)
-  - Unique requirements hech kim qo'llamayapti
-  - Licensing restrictions
-
-Buy (yoki open-source) qilish jonkuyar:
-  - Auth (Auth0, Clerk, Supabase Auth)
-  - Analytics (PostHog, Amplitude)
-  - Payments (Stripe, Paddle)
-  - Email (Resend, Postmark)
-  - Monitoring (Datadog, Grafana Cloud)
-  - LLM hosting (managed API)
-  - Vector DB (agar scale kerak bo'lsa)
-
-Rule: "Build differentiator, buy commodity"</div>
-  </article>
-
-  <article class="topic" id="learning-path" data-search>
-    <div class="topic-header">
-      <span class="topic-id">23.2</span>
-      <h3>backend engineer — learning roadmap</h3>
-    </div>
-    <div class="question">Qanday tartibda o'rganish kerak? Junior'dan senior'gacha yo'l.</div>
-    <div class="answer-label">javob</div>
-
-    <h4>Level 1 — Foundation (0-12 oy)</h4>
-
-    <div class="callout info">
-      <span class="callout-icon">ⓘ</span>
-      <div class="callout-content">
-        <div class="callout-title">Junior backend engineer</div>
-        <p>
-          <strong>Tillar:</strong> 1 ta to'liq bilish (Python yoki TypeScript)<br>
-          <strong>Framework:</strong> 1 ta production-grade (FastAPI, Express, Django)<br>
-          <strong>Database:</strong> PostgreSQL fundamentals, SQL yaxshi<br>
-          <strong>HTTP:</strong> REST API, JSON, status codes, cookies<br>
-          <strong>Tools:</strong> Git, Docker basics, Linux commands<br>
-          <strong>Testing:</strong> unit test yozish
-        </p>
-      </div>
-    </div>
-
-    <h4>Level 2 — Professional (1-3 yil)</h4>
-
-    <div class="callout info">
-      <span class="callout-icon">ⓘ</span>
-      <div class="callout-content">
-        <div class="callout-title">Mid-level</div>
-        <p>
-          <strong>DB deep:</strong> indexing, query tuning, transactions, locks<br>
-          <strong>Caching:</strong> Redis patterns, cache invalidation<br>
-          <strong>Async:</strong> Celery/queues, event-driven basics<br>
-          <strong>Auth:</strong> OAuth, JWT, RBAC<br>
-          <strong>Observability:</strong> logs, metrics, basic tracing<br>
-          <strong>K8s basics:</strong> pod, deployment, service<br>
-          <strong>CI/CD:</strong> pipeline yozish<br>
-          <strong>AI basics:</strong> LLM API ishlatish, prompt engineering
-        </p>
-      </div>
-    </div>
-
-    <h4>Level 3 — Senior (3-6 yil)</h4>
-
-    <div class="callout info">
-      <span class="callout-icon">ⓘ</span>
-      <div class="callout-content">
-        <div class="callout-title">Senior engineer</div>
-        <p>
-          <strong>System design:</strong> mikroservis, event sourcing, CQRS<br>
-          <strong>DB advanced:</strong> sharding, replication, multi-region<br>
-          <strong>Distributed:</strong> consistency, CAP, Saga pattern<br>
-          <strong>Performance:</strong> profiling, load testing<br>
-          <strong>Security:</strong> threat modeling, zero trust<br>
-          <strong>Cloud:</strong> AWS/GCP services deep<br>
-          <strong>AI:</strong> RAG production, fine-tuning, agents<br>
-          <strong>Leadership:</strong> mentoring, tech decisions, ADRs
-        </p>
-      </div>
-    </div>
-
-    <h4>Level 4 — Staff/Principal (6+ yil)</h4>
-
-    <div class="callout info">
-      <span class="callout-icon">ⓘ</span>
-      <div class="callout-content">
-        <div class="callout-title">Staff+ engineer</div>
-        <p>
-          <strong>Technical strategy:</strong> multi-year architecture vision<br>
-          <strong>Cross-team impact:</strong> butun kompaniya darajasida<br>
-          <strong>Business sense:</strong> tech qarorlarning biznes ta'siri<br>
-          <strong>Specialized depth:</strong> biror bir sohada top expert (distributed systems, AI infrastructure, security, etc.)<br>
-          <strong>Mentoring at scale:</strong> senior'larni yetishtirish
-        </p>
-      </div>
-    </div>
-
-    <h4>AI-specific track — zamonaviy yo'l</h4>
-
-    <p>Backend engineer bo'lib tursangiz ham, AI exposure shart. Bu bo'limlarni alohida o'rganing:</p>
-
-    <ol>
-      <li><strong>LLM fundamentals</strong> — qanday ishlaydi, tokens, context, cost</li>
-      <li><strong>RAG patterns</strong> — naive → hybrid → rerank → contextual</li>
-      <li><strong>Vector databases</strong> — pgvector'dan boshlang, keyin Qdrant</li>
-      <li><strong>Agent frameworks</strong> — LangGraph, CrewAI, raw function calling</li>
-      <li><strong>MCP protocol</strong> — Anthropic'ning universal tool protocol</li>
-      <li><strong>Fine-tuning basics</strong> — QLoRA, Ollama local deploy</li>
-      <li><strong>LLMOps</strong> — Langfuse, evaluation, cost monitoring</li>
-    </ol>
-
-    <h4>Resources — tavsiyalar</h4>
-
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th>Category</th><th>Resource</th></tr></thead>
-      <tbody>
-        <tr><td>Books</td><td>"Designing Data-Intensive Applications" — Kleppmann (must)</td></tr>
-        <tr><td>Books</td><td>"System Design Interview" — Alex Xu vol 1 &amp; 2</td></tr>
-        <tr><td>Books</td><td>"Building LLM Applications" — Chip Huyen (2024)</td></tr>
-        <tr><td>Courses</td><td>High Growth Engineer, ByteByteGo, DeepLearning.AI</td></tr>
-        <tr><td>Blogs</td><td>Martin Fowler, Hussein Nasser, Pragmatic Engineer</td></tr>
-        <tr><td>Practice</td><td>GitHub open-source, Leetcode (algorithms), own projects</td></tr>
-        <tr><td>AI-specific</td><td>Anthropic docs, Langfuse blog, HuggingFace courses</td></tr>
-      </tbody>
-    </table>
-    </div>
-
-    <div class="callout ai">
-      <span class="callout-icon">✦</span>
-      <div class="callout-content">
-        <div class="callout-title">Yakuniy maslahat</div>
-        <p>AI backend'ni almashtirmaydi, lekin backend engineer'ni o'zgartiradi. Faqat CRUD API yozadigan dev — bozordan tushib ketadi. <strong>AI-native architect</strong> — biznes muammosini AI bilan hal qila biladigan muhandis — bo'sh vakansiyalar ko'payib boradi. Prompt yozish, RAG quvur qurish, agent orkestrovka — bular yangi "normal" ko'nikmalar.</p>
-      </div>
-    </div>
-  </article>
-
-  <article class="topic" id="final-principles" data-search>
-    <div class="topic-header">
-      <span class="topic-id">23.3</span>
-      <h3>umumiy tamoyillar — stayish qoidalari</h3>
-    </div>
-    <div class="answer-label">yakun</div>
-
-    <div class="intuition">
-      <div class="label">Architect'ning yadrosi</div>
-      <p>Texnikalar o'zgaradi — tamoyillar qoladi. Bu yerda 2026-da hali ham haqiqiy qolgan principles.</p>
-    </div>
-
-    <ol>
-      <li><strong>Simple &gt; clever.</strong> Oddiy kod — oson debug, oson qayta yozish. Aqlli kod 6 oydan keyin sizning o'zingizga tushunarsiz.</li>
-      <li><strong>Boring technology wins.</strong> PostgreSQL 30 yoshda. Redis 15 yoshda. Ishlatilgan, ishonchli. Har yili yangi trend texnologiya — ehtiyot bo'ling.</li>
-      <li><strong>Premature optimization is the root of all evil.</strong> Measure first, optimize after. Lekin loyihani bosh'dan noto'g'ri qurmang — arxitektura muhim.</li>
-      <li><strong>Fail fast, fail loudly.</strong> Silent failure — eng xavfli. Xato — tez sezilib, alert bo'lsin.</li>
-      <li><strong>Idempotency is a superpower.</strong> Har operatsiya ikki marta bajarilsa ham xavfsiz bo'lsin. Retries, replays, chaos — hammasi oson bo'ladi.</li>
-      <li><strong>Observability before optimization.</strong> Qayerda sekin bo'layotganini bilmasdan optimize qilish — ko'z yumib otish.</li>
-      <li><strong>Security is not a feature.</strong> Har layer'da o'ylanishi kerak. Defense in depth.</li>
-      <li><strong>Cost is architecture.</strong> Cloud cost = design choice. $10k/oy'lik system $1k/oy'gacha tushirilishi mumkin (tahlil + re-architect).</li>
-      <li><strong>Write for humans.</strong> Kod boshqa odamlar uchun yoziladi. Keyinchalikchi siz — "boshqa odam".</li>
-      <li><strong>Tests are documentation.</strong> Yaxshi test — kod qanday ishlatilishini ko'rsatadi.</li>
-      <li><strong>Deletion is better than addition.</strong> Kamroq kod — kamroq bug, kamroq maintenance.</li>
-      <li><strong>YAGNI — You Aren't Gonna Need It.</strong> Kelajakdagi "ehtimol kerak bo'ladi" fichersi uchun kod yozmang.</li>
-    </ol>
-
-    <p style="margin-top: 32px; font-size: 17px; color: var(--green-soft); text-align: center; padding: 24px; border: 1px dashed var(--line-strong); background: var(--bg-card);">
-    <em>"Any fool can write code that a computer can understand.<br>
-    Good programmers write code that humans can understand."</em><br>
-    <span style="color: var(--fg-muted); font-size: 13px; letter-spacing: 0.1em;">— Martin Fowler</span>
-    </p>
-  </article>
-</section>
-<!-- ══════════════════════════════════════════════════════ -->
-<!-- PART VI: SYSTEM DESIGN MASTERCLASS                     -->
+<!-- PART VI: SYSTEM DESIGN & SOFTWARE PATTERNS             -->
 <!-- ══════════════════════════════════════════════════════ -->
 <div class="part-divider" data-search>
   <div class="part-divider-roman">Part VI</div>
-  <h2 class="part-divider-title">system design <span class="accent">patterns</span></h2>
-  <p class="part-divider-desc">Real interview va production'da uchrashtiladigan klassik system design muammolari. Har biri: requirements → scale estimation → HLD diagram → deep dive → trade-offs. URL shortener, chat, news feed, video streaming — bularni tushungan muhandis istalgan tizimni loyihalashi mumkin.</p>
+  <h2 class="part-divider-title">system design &amp; <span class="accent">architecture</span> patterns</h2>
+  <p class="part-divider-desc">Real interview va production system design muammolari (URL shortener, chat, news feed, video streaming), advanced AI patterns, klassik design patterns (SOLID, GoF), microservices arxitekturasi, va architecture decisions/trade-off framework'lari. Butun qo'llanmani sintez qilib, mustaqil tizim loyihalash uchun zaruriy bilim.</p>
 </div>
 
 <section class="section" id="part-24" data-search>
@@ -10334,15 +10967,6 @@ async def smart_route(question: str, context: str = "") -> tuple[str, str]:
   </article>
 
 </section>
-<!-- ══════════════════════════════════════════════════════ -->
-<!-- PART VII: SOFTWARE ARCHITECTURE PATTERNS              -->
-<!-- ══════════════════════════════════════════════════════ -->
-<div class="part-divider" data-search>
-  <div class="part-divider-roman">Part VII</div>
-  <h2 class="part-divider-title">software architecture <span class="accent">patterns</span></h2>
-  <p class="part-divider-desc">Design patterns, microservices, trade-off'lar va muhandislik tamoyillari. Kod yozish — muhandislikning kichik bir qismi. Katta tizimlarni loyihalash, refactor qilish, jamoa bilan ishlash — bular professional muhandisning asosiy mahorati.</p>
-</div>
-
 <section class="section" id="part-26" data-search>
   <div class="section-marker">
     <div class="section-marker-row">
@@ -11127,6 +11751,270 @@ async def process_order(order_id: str):
         <p><strong>Distributed monolith:</strong> service'lar alohida deploy qilinadi, lekin bir-biriga sinxron bog'liq. Bitta tushsa — hamma tushadi. <strong>Shared database:</strong> bir nechta service bitta DB'ga yozsa — o'zaro to'sib qo'yadi, migrate qilish imkonsiz. <strong>Nano-services:</strong> har funksiya alohida service — network overhead gigantik. <strong>Versioning yo'q:</strong> service API'sini versiyalamay o'zgartirish — consumer'lar sinadi.</p>
       </div>
     </div>
+  </article>
+</section>
+<section class="section" id="part-28" data-search>
+  <div class="section-marker">
+    <div class="section-marker-row">
+      <span class="section-num">28</span>
+      <h2 class="section-title">architecture decisions &amp; trade-offs</h2>
+    </div>
+  </div>
+
+  <article class="topic" id="tradeoffs-matrix" data-search>
+    <div class="topic-header">
+      <span class="topic-id">28.1</span>
+      <h3>tradeoffs matrix — umumiy qarorlar</h3>
+    </div>
+    <div class="question">Texnologiya tanlashda qanday tradeoff'lar bor?</div>
+    <div class="answer-label">javob</div>
+
+    <div class="intuition">
+      <div class="label">Architect'ning asosiy ishi</div>
+      <p>Code yozish — dasturchi ishi. Arxitektor — "trade-off'lar menejeri". Har qaror cost, latency, complexity, reliability, flexibility o'rtasida. "Eng yaxshi" yo'q — "sizning konteksingiz uchun optimal" bor.</p>
+    </div>
+
+    <h4>Monolith vs Microservice</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Aspect</th><th>Monolith</th><th>Microservices</th></tr></thead>
+      <tbody>
+        <tr><td>Development speed (start)</td><td>Tez</td><td>Sekin (infra setup)</td></tr>
+        <tr><td>Development speed (scale)</td><td>Sekinlashadi</td><td>Tez (parallel teams)</td></tr>
+        <tr><td>Deployment</td><td>Bir button, bir risk</td><td>Independent, lekin orchestrate</td></tr>
+        <tr><td>Debugging</td><td>Oson (bitta log)</td><td>Qiyin (distributed tracing kerak)</td></tr>
+        <tr><td>Data consistency</td><td>ACID transactions</td><td>Saga, eventual consistency</td></tr>
+        <tr><td>Network cost</td><td>In-process (0)</td><td>gRPC/HTTP overhead</td></tr>
+        <tr><td>Team size</td><td>&lt;20 dev</td><td>50+ dev</td></tr>
+        <tr><td>When to use</td><td>Startup, MVP, small team</td><td>Scale, independent teams</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="callout success">
+      <span class="callout-icon">✓</span>
+      <div class="callout-content">
+        <div class="callout-title">Modular Monolith — to'g'ri yondashuv</div>
+        <p>Boshlang'ichda: <strong>modular monolith</strong>. Code'ni mantiqiy module'larga bo'ling (bounded contexts), lekin bitta deploy. Kerak bo'lganda module'ni alohida service qilib chiqarish oson. "Microservice first" — antipattern kichik jamoalar uchun.</p>
+      </div>
+    </div>
+
+    <h4>SQL vs NoSQL</h4>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h6>PostgreSQL (SQL) — default</h6>
+        <ul>
+          <li>ACID, relational integrity</li>
+          <li>Complex queries, JOINs</li>
+          <li>JSONB — kerak bo'lsa NoSQL</li>
+          <li>Full-text search built-in</li>
+          <li>Vector support (pgvector)</li>
+          <li>Mature, 40+ yosh ecosystem</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h6>NoSQL — specific cases</h6>
+        <ul>
+          <li>MongoDB: schema-flexible doc store</li>
+          <li>DynamoDB: massive scale key-value</li>
+          <li>Cassandra: write-heavy time-series</li>
+          <li>Redis: cache, pubsub, real-time</li>
+          <li>Neo4j: graph relationships</li>
+        </ul>
+      </div>
+    </div>
+
+    <p><strong>Rule of thumb 2026:</strong> PostgreSQL'dan boshlang. 90% SaaS muammolari unda hal bo'ladi. Limit'ga urilgandagina specialize qiling.</p>
+
+    <h4>Sync vs Async</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Use case</th><th>Sync</th><th>Async</th></tr></thead>
+      <tbody>
+        <tr><td>REST API request</td><td>✓ default</td><td>Faqat I/O bound bo'lsa</td></tr>
+        <tr><td>Database query</td><td>Oddiy, ishonchli</td><td>Ko'p concurrent request</td></tr>
+        <tr><td>File upload/download</td><td>Sekin, block</td><td>✓ ishlatilishi shart</td></tr>
+        <tr><td>External API calls</td><td>Bir nechta seconds</td><td>✓ paralel, tez</td></tr>
+        <tr><td>Email, SMS</td><td>User kutsin? Yo'q</td><td>✓ queue'ga</td></tr>
+        <tr><td>Reports, exports</td><td>Timeout risk</td><td>✓ background job</td></tr>
+        <tr><td>Real-time push</td><td>Impossible</td><td>✓ WebSocket/SSE</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h4>Build vs Buy</h4>
+
+    <div class="diagram">Build qilish jonkuyar:
+  - Core business logic (sizning raqobat afzalligingiz)
+  - Unique requirements hech kim qo'llamayapti
+  - Licensing restrictions
+
+Buy (yoki open-source) qilish jonkuyar:
+  - Auth (Auth0, Clerk, Supabase Auth)
+  - Analytics (PostHog, Amplitude)
+  - Payments (Stripe, Paddle)
+  - Email (Resend, Postmark)
+  - Monitoring (Datadog, Grafana Cloud)
+  - LLM hosting (managed API)
+  - Vector DB (agar scale kerak bo'lsa)
+
+Rule: "Build differentiator, buy commodity"</div>
+  </article>
+
+  <article class="topic" id="learning-path" data-search>
+    <div class="topic-header">
+      <span class="topic-id">28.2</span>
+      <h3>backend engineer — learning roadmap</h3>
+    </div>
+    <div class="question">Qanday tartibda o'rganish kerak? Junior'dan senior'gacha yo'l.</div>
+    <div class="answer-label">javob</div>
+
+    <h4>Level 1 — Foundation (0-12 oy)</h4>
+
+    <div class="callout info">
+      <span class="callout-icon">ⓘ</span>
+      <div class="callout-content">
+        <div class="callout-title">Junior backend engineer</div>
+        <p>
+          <strong>Tillar:</strong> 1 ta to'liq bilish (Python yoki TypeScript)<br>
+          <strong>Framework:</strong> 1 ta production-grade (FastAPI, Express, Django)<br>
+          <strong>Database:</strong> PostgreSQL fundamentals, SQL yaxshi<br>
+          <strong>HTTP:</strong> REST API, JSON, status codes, cookies<br>
+          <strong>Tools:</strong> Git, Docker basics, Linux commands<br>
+          <strong>Testing:</strong> unit test yozish
+        </p>
+      </div>
+    </div>
+
+    <h4>Level 2 — Professional (1-3 yil)</h4>
+
+    <div class="callout info">
+      <span class="callout-icon">ⓘ</span>
+      <div class="callout-content">
+        <div class="callout-title">Mid-level</div>
+        <p>
+          <strong>DB deep:</strong> indexing, query tuning, transactions, locks<br>
+          <strong>Caching:</strong> Redis patterns, cache invalidation<br>
+          <strong>Async:</strong> Celery/queues, event-driven basics<br>
+          <strong>Auth:</strong> OAuth, JWT, RBAC<br>
+          <strong>Observability:</strong> logs, metrics, basic tracing<br>
+          <strong>K8s basics:</strong> pod, deployment, service<br>
+          <strong>CI/CD:</strong> pipeline yozish<br>
+          <strong>AI basics:</strong> LLM API ishlatish, prompt engineering
+        </p>
+      </div>
+    </div>
+
+    <h4>Level 3 — Senior (3-6 yil)</h4>
+
+    <div class="callout info">
+      <span class="callout-icon">ⓘ</span>
+      <div class="callout-content">
+        <div class="callout-title">Senior engineer</div>
+        <p>
+          <strong>System design:</strong> mikroservis, event sourcing, CQRS<br>
+          <strong>DB advanced:</strong> sharding, replication, multi-region<br>
+          <strong>Distributed:</strong> consistency, CAP, Saga pattern<br>
+          <strong>Performance:</strong> profiling, load testing<br>
+          <strong>Security:</strong> threat modeling, zero trust<br>
+          <strong>Cloud:</strong> AWS/GCP services deep<br>
+          <strong>AI:</strong> RAG production, fine-tuning, agents<br>
+          <strong>Leadership:</strong> mentoring, tech decisions, ADRs
+        </p>
+      </div>
+    </div>
+
+    <h4>Level 4 — Staff/Principal (6+ yil)</h4>
+
+    <div class="callout info">
+      <span class="callout-icon">ⓘ</span>
+      <div class="callout-content">
+        <div class="callout-title">Staff+ engineer</div>
+        <p>
+          <strong>Technical strategy:</strong> multi-year architecture vision<br>
+          <strong>Cross-team impact:</strong> butun kompaniya darajasida<br>
+          <strong>Business sense:</strong> tech qarorlarning biznes ta'siri<br>
+          <strong>Specialized depth:</strong> biror bir sohada top expert (distributed systems, AI infrastructure, security, etc.)<br>
+          <strong>Mentoring at scale:</strong> senior'larni yetishtirish
+        </p>
+      </div>
+    </div>
+
+    <h4>AI-specific track — zamonaviy yo'l</h4>
+
+    <p>Backend engineer bo'lib tursangiz ham, AI exposure shart. Bu bo'limlarni alohida o'rganing:</p>
+
+    <ol>
+      <li><strong>LLM fundamentals</strong> — qanday ishlaydi, tokens, context, cost</li>
+      <li><strong>RAG patterns</strong> — naive → hybrid → rerank → contextual</li>
+      <li><strong>Vector databases</strong> — pgvector'dan boshlang, keyin Qdrant</li>
+      <li><strong>Agent frameworks</strong> — LangGraph, CrewAI, raw function calling</li>
+      <li><strong>MCP protocol</strong> — Anthropic'ning universal tool protocol</li>
+      <li><strong>Fine-tuning basics</strong> — QLoRA, Ollama local deploy</li>
+      <li><strong>LLMOps</strong> — Langfuse, evaluation, cost monitoring</li>
+    </ol>
+
+    <h4>Resources — tavsiyalar</h4>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Resource</th></tr></thead>
+      <tbody>
+        <tr><td>Books</td><td>"Designing Data-Intensive Applications" — Kleppmann (must)</td></tr>
+        <tr><td>Books</td><td>"System Design Interview" — Alex Xu vol 1 &amp; 2</td></tr>
+        <tr><td>Books</td><td>"Building LLM Applications" — Chip Huyen (2024)</td></tr>
+        <tr><td>Courses</td><td>High Growth Engineer, ByteByteGo, DeepLearning.AI</td></tr>
+        <tr><td>Blogs</td><td>Martin Fowler, Hussein Nasser, Pragmatic Engineer</td></tr>
+        <tr><td>Practice</td><td>GitHub open-source, Leetcode (algorithms), own projects</td></tr>
+        <tr><td>AI-specific</td><td>Anthropic docs, Langfuse blog, HuggingFace courses</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="callout ai">
+      <span class="callout-icon">✦</span>
+      <div class="callout-content">
+        <div class="callout-title">Yakuniy maslahat</div>
+        <p>AI backend'ni almashtirmaydi, lekin backend engineer'ni o'zgartiradi. Faqat CRUD API yozadigan dev — bozordan tushib ketadi. <strong>AI-native architect</strong> — biznes muammosini AI bilan hal qila biladigan muhandis — bo'sh vakansiyalar ko'payib boradi. Prompt yozish, RAG quvur qurish, agent orkestrovka — bular yangi "normal" ko'nikmalar.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="topic" id="final-principles" data-search>
+    <div class="topic-header">
+      <span class="topic-id">28.3</span>
+      <h3>umumiy tamoyillar — stayish qoidalari</h3>
+    </div>
+    <div class="answer-label">yakun</div>
+
+    <div class="intuition">
+      <div class="label">Architect'ning yadrosi</div>
+      <p>Texnikalar o'zgaradi — tamoyillar qoladi. Bu yerda 2026-da hali ham haqiqiy qolgan principles.</p>
+    </div>
+
+    <ol>
+      <li><strong>Simple &gt; clever.</strong> Oddiy kod — oson debug, oson qayta yozish. Aqlli kod 6 oydan keyin sizning o'zingizga tushunarsiz.</li>
+      <li><strong>Boring technology wins.</strong> PostgreSQL 30 yoshda. Redis 15 yoshda. Ishlatilgan, ishonchli. Har yili yangi trend texnologiya — ehtiyot bo'ling.</li>
+      <li><strong>Premature optimization is the root of all evil.</strong> Measure first, optimize after. Lekin loyihani bosh'dan noto'g'ri qurmang — arxitektura muhim.</li>
+      <li><strong>Fail fast, fail loudly.</strong> Silent failure — eng xavfli. Xato — tez sezilib, alert bo'lsin.</li>
+      <li><strong>Idempotency is a superpower.</strong> Har operatsiya ikki marta bajarilsa ham xavfsiz bo'lsin. Retries, replays, chaos — hammasi oson bo'ladi.</li>
+      <li><strong>Observability before optimization.</strong> Qayerda sekin bo'layotganini bilmasdan optimize qilish — ko'z yumib otish.</li>
+      <li><strong>Security is not a feature.</strong> Har layer'da o'ylanishi kerak. Defense in depth.</li>
+      <li><strong>Cost is architecture.</strong> Cloud cost = design choice. $10k/oy'lik system $1k/oy'gacha tushirilishi mumkin (tahlil + re-architect).</li>
+      <li><strong>Write for humans.</strong> Kod boshqa odamlar uchun yoziladi. Keyinchalikchi siz — "boshqa odam".</li>
+      <li><strong>Tests are documentation.</strong> Yaxshi test — kod qanday ishlatilishini ko'rsatadi.</li>
+      <li><strong>Deletion is better than addition.</strong> Kamroq kod — kamroq bug, kamroq maintenance.</li>
+      <li><strong>YAGNI — You Aren't Gonna Need It.</strong> Kelajakdagi "ehtimol kerak bo'ladi" fichersi uchun kod yozmang.</li>
+    </ol>
+
+    <p style="margin-top: 32px; font-size: 17px; color: var(--green-soft); text-align: center; padding: 24px; border: 1px dashed var(--line-strong); background: var(--bg-card);">
+    <em>"Any fool can write code that a computer can understand.<br>
+    Good programmers write code that humans can understand."</em><br>
+    <span style="color: var(--fg-muted); font-size: 13px; letter-spacing: 0.1em;">— Martin Fowler</span>
+    </p>
   </article>
 </section>
 
