@@ -595,7 +595,42 @@ tr:hover td { background: var(--green-dim); }
 ::selection { background: var(--green); color: var(--bg-deep); }
 a:focus-visible, button:focus-visible, input:focus-visible { outline: 1px solid var(--green); outline-offset: 2px; }
 
-/* ── Mobile performance: reduce rendering load ── */
+/* ── Mobile performance: applied immediately via <script> in <head> ── */
+html.is-mobile .section,
+html.is-mobile .topic,
+html.is-mobile .part-divider {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 500px;
+}
+html.is-mobile pre,
+html.is-mobile .code-block {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+  max-height: 60vh;
+  overflow: auto;
+}
+html.is-mobile #bg-canvas,
+html.is-mobile .bg-scanlines,
+html.is-mobile .hacker-scanline { display: none !important; }
+html.is-mobile .hacker-title,
+html.is-mobile .ht-text { animation: none !important; }
+html.is-mobile .sidebar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #0a0d0a !important;
+}
+html.is-mobile * { animation-iteration-count: 1 !important; }
+html.is-mobile .blink,
+html.is-mobile .author-title .cursor { animation: none !important; }
+html.is-mobile .topic-header,
+html.is-mobile .section-marker,
+html.is-mobile .callout { box-shadow: none !important; }
+/* Disable expensive text-shadows on mobile */
+html.is-mobile .footer-ascii,
+html.is-mobile .section-num,
+html.is-mobile .hacker-title { text-shadow: none !important; }
+
+/* ── Mobile performance: fallback media query ── */
 @media (max-width: 719px) {
   /* Virtualize off-screen sections — biggest single win for large DOM */
   .section { content-visibility: auto; contain-intrinsic-size: auto 700px; }

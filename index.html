@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<script>
+(function(){
+  var touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 1);
+  var small = window.innerWidth < 1024;
+  if (touch || small) document.documentElement.className += ' is-mobile';
+})();
+</script>
 <meta name="theme-color" content="#0a0d0a">
 <meta name="color-scheme" content="dark">
 <title>Backend & AI Architecture // Komiljon Xamidjonov</title>
@@ -9834,26 +9841,31 @@ async def process_order(order_id: str):
 
 <script>
 (function() {
-  var touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 1);
-  var wide  = window.innerWidth >= 1024;
-  var noRed = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (wide && !touch && noRed) {
+  var touch  = ('ontouchstart' in window) || (navigator.maxTouchPoints > 1);
+  var wide   = window.innerWidth >= 1024;
+  var noRed  = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var desktop = wide && !touch && noRed;
+
+  function add(src) {
     var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    s.onload = function() {
-      var bg = document.createElement('script');
-      bg.src = 'assets/js/background.js';
-      document.head.appendChild(bg);
-    };
+    s.src = src; s.defer = true;
     document.head.appendChild(s);
+    return s;
   }
+
+  if (desktop) {
+    var t = document.createElement('script');
+    t.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    t.onload = function() { add('assets/js/background.js'); };
+    document.head.appendChild(t);
+    add('https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js');
+    add('https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js');
+    add('assets/js/viz.js');
+  }
+  add('assets/js/nav.js');
+  add('assets/js/app.js');
 })();
 </script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
-<script defer src="assets/js/viz.js"></script>
-<script defer src="assets/js/nav.js"></script>
-<script defer src="assets/js/app.js"></script>
 
 </body>
 </html>
